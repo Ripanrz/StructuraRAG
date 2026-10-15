@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.py[cod]
+docx-e-hukum-generated/
+pdf-e-hukum/
+docx-e-hukum/
+*.pdf
+*.docx
+*.xlsx
+.webapp-data/
+Tools_Formatting/gold_standard_profile.json
+Tools_Formatting/gold_standard_summary.md

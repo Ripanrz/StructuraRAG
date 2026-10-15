@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101b2d">
+  <title>E-Hukum · RAG Document Studio</title>
+  <style>
+    :root { color-scheme: light; --ink:#14243b; --muted:#617086; --line:#dfe6ee; --paper:#fff; --canvas:#f4f7fa; --navy:#101b2d; --blue:#285b9d; --gold:#c59b55; --green:#21745a; --red:#a73f42; }
+    * { box-sizing:border-box }
+    body { margin:0; background:var(--canvas); color:var(--ink); font:15px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif }
+    button,input { font:inherit }
+    .topbar { background:var(--navy); color:#f7f8fb; border-bottom:3px solid var(--gold) }
+    .top-inner { width:min(1120px,calc(100% - 40px)); margin:auto; height:76px; display:flex; align-items:center; justify-content:space-between }
+    .brand { display:flex; align-items:center; gap:13px; letter-spacing:.02em }
+    .brand-mark { width:38px; height:38px; border:1px solid #c9a968; border-radius:10px; color:#e7c888; display:grid; place-items:center; font-family:Georgia,serif; font-size:22px }
+    .brand-name { font-weight:650; font-size:15px }
+    .brand-sub { color:#aeb9c7; font-size:11px; letter-spacing:.12em; text-transform:uppercase }
+    .local-tag { color:#d7e1ec; border:1px solid #43536a; padding:6px 10px; border-radius:999px; font-size:12px }
+    main { width:min(1120px,calc(100% - 40px)); margin:44px auto 72px }
+    .intro { display:flex; justify-content:space-between; gap:32px; align-items:flex-end; margin-bottom:26px }
+    .eyebrow { color:#8b6b37; font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.16em }
+    h1 { font-family:Georgia,"Times New Roman",serif; font-weight:500; letter-spacing:-.03em; font-size:clamp(34px,5vw,48px); line-height:1.08; margin:9px 0 12px }
+    .lead { color:var(--muted); max-width:660px; margin:0; font-size:16px }
+    .secure-note { color:#53647a; font-size:12px; max-width:200px; text-align:right }
+    .grid { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(280px,.75fr); gap:20px; align-items:start }
+    .card { background:var(--paper); border:1px solid var(--line); border-radius:16px; box-shadow:0 7px 24px #263d5810 }
+    .card-head { padding:20px 22px 16px; border-bottom:1px solid #edf0f4; display:flex; align-items:center; justify-content:space-between; gap:12px }
+    .card-title { margin:0; font-size:16px; font-weight:650 }
+    .step { color:#8693a3; font-size:12px }
+    .card-body { padding:22px }
+    .drop { display:flex; min-height:220px; border:1.5px dashed #b7c4d2; border-radius:13px; background:#fbfcfd; align-items:center; justify-content:center; text-align:center; padding:24px; transition:.15s ease; cursor:pointer }
+    .drop.drag,.drop:hover { border-color:#537cab; background:#f5f9fd }
+    .drop-icon { margin:0 auto 12px; width:45px; height:45px; border-radius:13px; background:#eaf0f7; color:var(--blue); display:grid; place-items:center; font-size:23px }
+    .drop strong { display:block; font-size:15px; margin-bottom:5px }
+    .drop span { color:var(--muted); font-size:13px }
+    .file-name { margin-top:12px; color:var(--blue)!important; font-weight:600; word-break:break-all }
+    .hidden { display:none!important }
+    .actions { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:18px }
+    .format-note { color:var(--muted); font-size:12px }
+    .primary { border:0; background:var(--navy); color:white; border-radius:9px; padding:11px 17px; font-weight:650; cursor:pointer; transition:.15s }
+    .primary:hover { background:#203958 }
+    .primary:disabled { opacity:.45; cursor:not-allowed }
+    .message { margin-top:18px; border:1px solid var(--line); border-radius:11px; padding:14px 15px; background:#fbfcfd }
+    .message-row { display:flex; justify-content:space-between; gap:10px; align-items:center }
+    .message-title { font-weight:650 }
+    .message-text { color:var(--muted); font-size:13px; margin-top:3px; overflow-wrap:anywhere }
+    .badge { border-radius:999px; padding:4px 9px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; white-space:nowrap; background:#edf1f5; color:#506176 }
+    .badge.ok { color:var(--green); background:#e9f5ef }
+    .badge.busy { color:#8b6528; background:#fbf2e2 }
+    .badge.error { color:var(--red); background:#faeaea }
+    .download { color:var(--blue); font-weight:700; font-size:13px; display:inline-block; margin-top:10px; text-decoration:none }
+    .download:hover { text-decoration:underline }
+    .warnings { margin:9px 0 0; padding-left:18px; color:#8b6528; font-size:12px }
+    .side { display:flex; flex-direction:column; gap:20px }
+    .status-card { padding:19px 20px }
+    .status-top { display:flex; justify-content:space-between; align-items:center; gap:12px }
+    .status-heading { font-weight:650 }
+    .dot { width:9px; height:9px; border-radius:50%; background:#9ca8b6; display:inline-block; margin-right:7px }
+    .dot.ok { background:#32a277; box-shadow:0 0 0 4px #32a27720 }
+    .status-copy { margin:9px 0 0; color:var(--muted); font-size:13px }
+    .commands { margin-top:13px; background:#f1f4f7; border:1px solid #e4e9ef; padding:10px 12px; border-radius:8px; color:#34465d; font:12px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace }
+    .text-button { margin-top:11px; background:none; border:0; color:var(--blue); font-weight:650; padding:0; cursor:pointer; font-size:12px }
+    .rules { padding:19px 20px }
+    .rules h2 { font-size:14px; margin:0 0 12px }
+    .rule { display:flex; gap:10px; padding:9px 0; border-top:1px solid #edf0f4; color:#526176; font-size:12px }
+    .rule b { color:var(--ink); font-weight:600 }
+    .rule-icon { color:var(--gold); font-weight:800 }
+    .history { margin-top:20px }
+    .history-list { padding:0 20px 16px }
+    .history-item { display:flex; justify-content:space-between; gap:10px; padding:12px 0; border-top:1px solid #edf0f4; font-size:13px }
+    .history-item:first-child { border-top:0 }
+    .history-name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:65% }
+    .history-state { color:var(--muted); white-space:nowrap; font-size:12px }
+    .empty { padding:5px 0 2px; color:var(--muted); font-size:13px }
+    .foot { text-align:center; color:#8a96a6; font-size:12px; margin-top:30px }
+    @media(max-width:780px) { main { margin-top:30px }.intro { display:block }.secure-note { text-align:left; max-width:none; margin-top:12px }.grid { grid-template-columns:1fr }.side { grid-row:auto }.top-inner { width:calc(100% - 28px) } }
+    @media(max-width:500px) { main { width:calc(100% - 24px) }.top-inner { height:66px }.local-tag { font-size:10px }.card-body { padding:16px }.actions { align-items:stretch; flex-direction:column }.primary { width:100% } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="top-inner">
+      <div class="brand"><div class="brand-mark">E</div><div><div class="brand-name">E-Hukum</div><div class="brand-sub">RAG Document Studio</div></div></div>
+      <div class="local-tag">Pemrosesan lokal · Codex OAuth</div>
+    </div>
+  </header>
+  <main>
+    <section class="intro">
+      <div><div class="eyebrow">Document intelligence</div><h1>Siapkan dokumen hukum<br>untuk knowledge base.</h1><p class="lead">Unggah PDF dan konversi menjadi DOCX berstruktur DSL yang mengikuti pola gold standard E-Hukum—siap untuk ditinjau dan diproses ke pipeline RAG.</p></div>
+      <div class="secure-note">PDF dan hasil konversi disimpan di perangkat/server tempat aplikasi ini berjalan.</div>
+    </section>
+    <div class="grid">
+      <section class="card">
+        <div class="card-head"><h2 class="card-title">Konversi dokumen</h2><span class="step">01 — Unggah & proses</span></div>
+        <div class="card-body">
+          <label class="drop" id="drop" for="pdf-file">
+            <div><div class="drop-icon">↑</div><strong>Pilih PDF atau tarik file ke sini</strong><span>PDF saja · maks. 50 MB · satu dokumen per proses</span><span class="file-name" id="file-name"></span></div>
+          </label>
+          <input class="hidden" id="pdf-file" type="file" accept="application/pdf,.pdf">
+          <div class="actions"><span class="format-note">DOCX, DSL TXT, dan laporan dibuat per job.</span><button class="primary" id="submit" disabled>Mulai konversi <span aria-hidden="true">→</span></button></div>
+          <div class="message hidden" id="current-job" aria-live="polite"></div>
+        </div>
+      </section>
+      <aside class="side">
+        <section class="card status-card">
+          <div class="status-top"><div class="status-heading"><span class="dot" id="codex-dot"></span>Status Codex</div><span class="badge" id="codex-badge">Memeriksa</span></div>
+          <p class="status-copy" id="codex-copy">Memeriksa Codex CLI dan sesi OAuth di mesin ini…</p>
+          <div class="commands" id="login-commands">codex login<br>codex login status</div>
+          <button class="text-button" id="refresh-health">Periksa ulang koneksi</button>
+        </section>
+        <section class="card rules">
+          <h2>Yang perlu diketahui</h2>
+          <div class="rule"><span class="rule-icon">01</span><span><b>Mulai dari satu PDF.</b> Tinjau hasil sebelum memproses dokumen lain.</span></div>
+          <div class="rule"><span class="rule-icon">02</span><span><b>LLM bisa keliru.</b> Periksa heading, tabel, dan kelengkapan isi sebelum dipakai.</span></div>
+          <div class="rule"><span class="rule-icon">03</span><span><b>Scanned PDF.</b> OCR perlu Tesseract dan bahasa Indonesian/English disiapkan di mesin.</span></div>
+          <div class="rule"><span class="rule-icon">04</span><span><b>Jangan expose server lokal.</b> Aplikasi ini belum punya multi-user auth.</span></div>
+        </section>
+      </aside>
+    </div>
+    <section class="card history">
+      <div class="card-head"><h2 class="card-title">Aktivitas terbaru</h2><span class="step">Disimpan lokal</span></div>
+      <div class="history-list" id="history"><div class="empty">Belum ada dokumen diproses.</div></div>
+    </section>
+    <div class="foot">E-Hukum · Output otomatis tetap memerlukan review manusia.</div>
+  </main>
+  <script>
+    const input = document.querySelector('#pdf-file');
+    const drop = document.querySelector('#drop');
+    const submit = document.querySelector('#submit');
+    const nameLabel = document.querySelector('#file-name');
+    const jobPanel = document.querySelector('#current-job');
+    let selectedFile = null;
+    let pollTimer = null;
+    let codexAuthenticated = false;
+
+    function chooseFile(file) {
+      selectedFile = file || null;
+      nameLabel.textContent = selectedFile ? `${selectedFile.name} · ${(selectedFile.size / 1024 / 1024).toFixed(2)} MB` : '';
+      submit.disabled = !selectedFile || !selectedFile.name.toLowerCase().endsWith('.pdf') || !codexAuthenticated;
+    }
+    input.addEventListener('change', () => chooseFile(input.files[0]));
+    for (const eventName of ['dragenter','dragover']) drop.addEventListener(eventName, e => { e.preventDefault(); drop.classList.add('drag'); });
+    for (const eventName of ['dragleave','drop']) drop.addEventListener(eventName, e => { e.preventDefault(); drop.classList.remove('drag'); });
+    drop.addEventListener('drop', e => chooseFile(e.dataTransfer.files[0]));
+
+    function showJob(job) {
+      jobPanel.classList.remove('hidden');
+      jobPanel.replaceChildren();
+      const row = document.createElement('div'); row.className = 'message-row';
+      const left = document.createElement('div');
+      const title = document.createElement('div'); title.className = 'message-title'; title.textContent = job.source_name;
+      const msg = document.createElement('div'); msg.className = 'message-text'; msg.textContent = job.message;
+      left.append(title,msg);
+      const badge = document.createElement('span'); badge.className = 'badge';
+      badge.textContent = ({queued:'Antre',running:'Diproses',completed:'Selesai',failed:'Gagal'})[job.status] || job.status;
+      badge.classList.add(job.status === 'completed' ? 'ok' : job.status === 'failed' ? 'error' : 'busy');
+      row.append(left,badge); jobPanel.append(row);
+      if (job.status === 'completed') {
+        const link = document.createElement('a'); link.className = 'download'; link.href = `/api/jobs/${job.id}/download`; link.textContent = `Unduh ${job.output_name} ↓`; jobPanel.append(link);
+      }
+      if (job.warnings?.length) {
+        const list = document.createElement('ul'); list.className = 'warnings';
+        job.warnings.forEach(warning => { const li = document.createElement('li'); li.textContent = warning; list.append(li); });
+        jobPanel.append(list);
+      }
+      if (['completed','failed'].includes(job.status)) {
+        submit.disabled = !selectedFile || !codexAuthenticated;
+        if (pollTimer) clearInterval(pollTimer);
+        refreshHistory();
+      }
+    }
+
+    async function pollJob(id) {
+      try { const response = await fetch(`/api/jobs/${id}`); if (response.ok) showJob(await response.json()); }
+      catch (_) { /* transient polling error; retry */ }
+    }
+    submit.addEventListener('click', async () => {
+      if (!selectedFile) return;
+      submit.disabled = true; submit.textContent = 'Mengunggah…';
+      jobPanel.classList.remove('hidden'); jobPanel.textContent = 'Mengunggah PDF ke proses lokal…';
+      const form = new FormData(); form.append('file', selectedFile);
+      try {
+        const response = await fetch('/api/jobs', { method:'POST', headers:{'X-KMS-Request':'1'}, body:form });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || 'Upload gagal.');
+        showJob(result); pollTimer = setInterval(() => pollJob(result.id), 2500);
+      } catch (error) {
+        jobPanel.textContent = error.message || 'Terjadi kesalahan.';
+        submit.disabled = false;
+      } finally { submit.innerHTML = 'Mulai konversi <span aria-hidden="true">→</span>'; }
+    });
+
+    async function refreshHealth() {
+      const copy = document.querySelector('#codex-copy'); const badge = document.querySelector('#codex-badge'); const dot = document.querySelector('#codex-dot');
+      try {
+        const response = await fetch('/api/health'); const health = await response.json(); const codex = health.codex;
+        codexAuthenticated = Boolean(codex.authenticated);
+        copy.textContent = codex.message; badge.textContent = codex.authenticated ? 'Terhubung' : (codex.available ? 'Perlu login' : 'CLI tidak ada');
+        badge.className = `badge ${codex.authenticated ? 'ok' : 'error'}`; dot.className = `dot ${codex.authenticated ? 'ok' : ''}`;
+        document.querySelector('#login-commands').classList.toggle('hidden', codex.authenticated);
+        submit.disabled = !selectedFile || !codexAuthenticated;
+      } catch (_) { copy.textContent = 'Server aplikasi tidak merespons.'; badge.textContent = 'Offline'; badge.className = 'badge error'; }
+    }
+    document.querySelector('#refresh-health').addEventListener('click', refreshHealth);
+
+    async function refreshHistory() {
+      const panel = document.querySelector('#history');
+      try {
+        const response = await fetch('/api/jobs'); const jobs = await response.json(); panel.replaceChildren();
+        if (!jobs.length) { panel.innerHTML = '<div class="empty">Belum ada dokumen diproses.</div>'; return; }
+        jobs.forEach(job => {
+          const row = document.createElement('div'); row.className = 'history-item';
+          const name = document.createElement('span'); name.className = 'history-name'; name.textContent = job.source_name;
+          const state = document.createElement('span'); state.className = 'history-state'; state.textContent = ({queued:'Antre',running:'Diproses',completed:'Selesai',failed:'Gagal'})[job.status] || job.status;
+          row.append(name,state); panel.append(row);
+        });
+      } catch (_) { /* keep the rest of the app usable */ }
+    }
+    refreshHealth(); refreshHistory();
+  </script>
+</body>
+</html>
