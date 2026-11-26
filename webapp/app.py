@@ -1,8 +1,7 @@
-"""Local web interface for the RAG-ready legal PDF converter.
+"""Local-first web interface for StructuraRAG's PDF preprocessing workflow.
 
-The web process calls the existing converter with the locally authenticated
-Codex CLI. It deliberately binds to loopback by default: this prototype is
-not an internet-facing multi-user service.
+Jobs can use the offline heuristic baseline or an optional authenticated AI
+provider. The service binds to loopback and is not a multi-user deployment.
 """
 from __future__ import annotations
 
