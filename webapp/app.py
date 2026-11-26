@@ -483,6 +483,11 @@ async def convert_vercel(file: UploadFile = File(...), provider: str = Form("heu
             raise HTTPException(status_code=422, detail=detail[-1500:])
         output_bytes = output_path.read_bytes()
         output_filename = output_path.name
+        if len(output_bytes) > 4 * 1024 * 1024:
+            raise HTTPException(
+                status_code=413,
+                detail="DOCX hasil melebihi batas respons Function. Gunakan PDF yang lebih kecil atau deployment dengan penyimpanan objek dan worker.",
+            )
 
     warnings = report.get("warnings", [])
     headers = {
