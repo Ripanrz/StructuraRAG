@@ -31,8 +31,6 @@ StructuraRAG is a PDF-first document preprocessing tool for downstream Retrieval
 
 The current implementation focuses on preserving logical hierarchy, reading order, tables, page boundaries, images, and contextual relationships during preprocessing.
 
-The current implementation is PDF-first and includes a legal-document reference profiler, a CLI converter, and a local web interface. The architecture is intended to grow into multi-format ingestion and independent structure-aware chunking.
-
 > **Current scope:** PDF is the implemented source-document conversion format. DOCX is used as a reference and profiling format. General DOCX, TXT, HTML, XLSX, and PPTX input conversion is not yet implemented.
 
 ## Core Objectives
