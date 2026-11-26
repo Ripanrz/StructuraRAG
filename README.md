@@ -278,7 +278,7 @@ The current version does not provide a complete independent semantic chunking en
 I run the deterministic regression tests with the Python standard library:
 
 ```powershell
-python -m pip install -r Tools_Formatting\\requirements.txt
+python -m pip install -r Tools_Formatting\requirements.txt
 python -m unittest discover -s tests -v
 ```
 
