@@ -1,4 +1,4 @@
-# E-Hukum RAG Converter — Web
+# StructuraRAG — Local Web Interface
 
 Web interface for the existing PDF-to-RAG-DOCX converter. It uploads one PDF, queues conversion, reports status, and serves the resulting DOCX. The worker invokes `Tools_Formatting/convert_pdf_batch.py --provider codex` and therefore uses the Codex CLI OAuth session on the same machine.
 
