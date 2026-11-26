@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">StructuraRAG</title>
+  <desc id="desc">A structured document mark with connected hierarchy nodes.</desc>
+  <defs>
+    <linearGradient id="bg" x1="14" y1="12" x2="112" y2="118" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#183354"/>
+      <stop offset="1" stop-color="#0D1B2D"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="38" y1="34" x2="93" y2="94" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#51D6C2"/>
+      <stop offset="1" stop-color="#2E9DAD"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="29" fill="url(#bg)"/>
+  <path d="M43 25h29l17 17v58H43V25Z" fill="#F7FAFC" fill-opacity=".07" stroke="#E5EEF5" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M72 25v18h17" fill="none" stroke="#E5EEF5" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M54 57h24M54 70h14M54 84h24" stroke="#DCE8EF" stroke-width="4" stroke-linecap="round"/>
+  <path d="M54 98h11" stroke="#DCE8EF" stroke-width="4" stroke-linecap="round"/>
+  <path d="M30 52v44m0-44h8m-8 22h8m-8 22h8" fill="none" stroke="url(#accent)" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="30" cy="52" r="5" fill="#51D6C2"/>
+  <circle cx="30" cy="74" r="5" fill="#51D6C2"/>
+  <circle cx="30" cy="96" r="5" fill="#51D6C2"/>
+  <path d="m79 83 6 6 12-14" fill="none" stroke="#E8C27A" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
