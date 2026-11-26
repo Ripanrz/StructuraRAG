@@ -247,8 +247,6 @@ def _run_job(job_id: str) -> None:
     process_env = os.environ.copy()
     if provider == "local":
         process_env["STRUCTURARAG_LOCAL_AI_BASE_URL"] = _local_ai_base_url()
-    if provider == "local":
-        process_env["STRUCTURARAG_LOCAL_AI_BASE_URL"] = _local_ai_base_url()
     if provider == "codex" and not codex_model:
         process_env["OPENAI_MODEL"] = ""
     try:
