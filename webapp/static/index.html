@@ -169,10 +169,14 @@
     function updateProviderState() {
       const provider = providerSelect.value;
       providerHelp.textContent = provider === 'heuristic'
-        ? 'Rule-Based berjalan offline tanpa login AI. AI Lokal memakai Ollama atau endpoint OpenAI-compatible milik saya.'
-        : provider === 'codex'
-          ? (codexAuthenticated ? 'Codex CLI terautentikasi pada mesin ini. Konten halaman dikirim untuk rekonstruksi struktur berbantuan AI.' : 'Jalankan codex login pada terminal mesin ini sebelum memilih mode ini.')
-          : (openaiConfigured ? 'Kredensial OpenAI terpasang pada environment server lokal. Jangan memasukkan API key ke browser.' : 'Set OPENAI_API_KEY atau OPENAI_BEARER_TOKEN pada environment sebelum memakai mode ini.');
+        ? 'Mode Rule-Based berjalan offline tanpa akun AI, OAuth, atau API key. Struktur dikenali dengan aturan deterministik; tinjau hasil yang ambigu.'
+        : provider === 'local'
+          ? (localAiConfigured
+            ? 'Endpoint AI Lokal sudah dikonfigurasi. Model memproses struktur ambigu; kredensial hanya disimpan pada server.'
+            : 'AI Lokal belum dikonfigurasi. Gunakan Ollama atau endpoint OpenAI-compatible dan atur STRUCTURARAG_LOCAL_AI_BASE_URL.')
+          : (cloudOAuthAvailable
+            ? 'ChatGPT OAuth tersedia untuk akun yang memenuhi syarat.'
+            : 'ChatGPT OAuth untuk inferensi cloud pada deployment jarak jauh menunggu approval OpenAI dan implementasi sesi/token yang aman.');
       submit.disabled = !canSubmit();
     }
 
@@ -291,7 +295,10 @@
         badge.className = `badge ${aiReady ? 'ok' : ''}`;
         dot.className = `dot ${aiReady ? 'ok' : ''}`;
         document.querySelector('#login-commands').textContent = 'Rule-Based: tanpa login\nAI Lokal: Ollama /v1\nAI Cloud: perlu approval OAuth';
-        document.querySelector('#login-commands').classList.toggle('hidden', aiReady && !cloudOAuthAvailable);
+        document.querySelector('#login-commands').classList.remove('hidden');
+        if (runtimeMode === 'vercel' && !health.access_protected) {
+          copy.textContent += ' PERINGATAN: akses belum dilindungi password; atur STRUCTURARAG_ACCESS_PASSWORD sebelum membagikan URL.';
+        }
         updateProviderState();
       } catch (_) {
         copy.textContent = 'Server aplikasi tidak merespons.';
