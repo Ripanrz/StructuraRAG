@@ -215,7 +215,6 @@ By default, the converter uses `pdf-e-hukum` as its default input directory and 
 I start the local application from the project root:
 
 ```powershell
-codex login
 .\webapp\start.ps1
 ```
 
