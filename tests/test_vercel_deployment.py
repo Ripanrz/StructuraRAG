@@ -9,7 +9,6 @@ from unittest.mock import patch
 
 app_module = importlib.import_module("webapp.app")
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -18,13 +17,48 @@ class VercelDeploymentContractTests(unittest.TestCase):
         entrypoint = (ROOT / "index.py").read_text(encoding="utf-8")
         self.assertIn("from webapp.app import app", entrypoint)
 
-    def test_vercel_config_includes_converter_and_static_files(self) -> None:
+    def test_vercel_app_routes_and_bundled_files_exist(self) -> None:
+        routes = {route.path for route in app_module.app.routes}
+        self.assertIn("/", routes)
+        self.assertIn("/api/health", routes)
+        self.assertIn("/api/convert", routes)
+        self.assertTrue((ROOT / "Tools_Formatting" / "convert_pdf_batch.py").is_file())
+        self.assertTrue((ROOT / "webapp" / "static" / "index.html").is_file())
+        self.assertTrue((ROOT / "webapp" / "static" / "logo.svg").is_file())
+
+    def test_vercel_config_uses_string_globs_and_bundles_runtime_files(self) -> None:
         config = json.loads((ROOT / "vercel.json").read_text(encoding="utf-8"))
         function = config["functions"]["index.py"]
         self.assertEqual(function["maxDuration"], 300)
+
         includes = function["includeFiles"]
-        self.assertTrue(any("Tools_Formatting/**" in item for item in includes))
-        self.assertTrue(any("webapp/static/**" in item for item in includes))
+        excludes = function["excludeFiles"]
+        self.assertIsInstance(includes, str)
+        self.assertIsInstance(excludes, str)
+        self.assertIn("Tools_Formatting/**", includes)
+        self.assertIn("webapp/static/**", includes)
+        self.assertIn("tests/**", excludes)
+        self.assertIn("docs/**", excludes)
+
+    def test_root_requirements_are_flat_and_cover_vercel_runtime(self) -> None:
+        lines = (ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
+        active_lines = [
+            line.partition("#")[0].strip()
+            for line in lines
+            if line.partition("#")[0].strip()
+        ]
+        self.assertFalse(
+            any(line.startswith(("-r ", "--requirement")) for line in active_lines),
+            "Vercel root requirements must not rely on nested -r includes.",
+        )
+
+        packages = {
+            line.split("[", 1)[0].split(">=", 1)[0].split("==", 1)[0].lower()
+            for line in active_lines
+        }
+        self.assertTrue(
+            {"fastapi", "python-multipart", "pymupdf", "python-docx"}.issubset(packages)
+        )
 
     def test_vercel_local_model_requires_https_endpoint(self) -> None:
         with patch.object(app_module, "IS_VERCEL", True):
