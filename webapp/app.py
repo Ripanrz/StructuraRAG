@@ -260,7 +260,10 @@ def _ensure_worker() -> None:
 
 @app.on_event("startup")
 def startup() -> None:
-    _ensure_worker()
+    # Vercel Functions are request-driven and may be recycled at any time.
+    # The local queue/SQLite worker is only used by the persistent local app.
+    if not IS_VERCEL:
+        _ensure_worker()
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -270,7 +273,8 @@ def home() -> FileResponse:
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
-    _ensure_worker()
+    if not IS_VERCEL:
+        _ensure_worker()
     return {
         "status": "ok",
         "runtime": "vercel" if IS_VERCEL else "local",
@@ -299,6 +303,8 @@ async def create_job(
     file: UploadFile = File(...),
     provider: str = Form("heuristic"),
 ) -> dict[str, Any]:
+    if IS_VERCEL:
+        raise HTTPException(status_code=410, detail="Vercel deployment uses stateless /api/convert, not the local background-job queue.")
     _ensure_worker()
     if provider not in {"heuristic", "local", "codex", "openai"}:
         raise HTTPException(status_code=400, detail="Provider tidak dikenal.")
