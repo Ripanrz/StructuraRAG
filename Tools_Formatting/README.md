@@ -1,4 +1,4 @@
-# StructuraRAG — PDF to Structured RAG Document Tools
+# StructuraRAG — PDF Processing Tools
 
 I built this tool around a legal-document reference corpus stored locally in `docx-e-hukum`. Run commands from the StructuraRAG repository root.
 
