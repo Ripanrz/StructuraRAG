@@ -262,6 +262,44 @@ def openai_response(prompt: str, model: str, base_url: str, page_images: list[by
     return response_text(result)
 
 
+def local_ai_response(prompt: str, model: str, base_url: str, api_key: str | None = None,
+                     timeout: int = 300) -> str:
+    """Call an OpenAI-compatible local/self-hosted chat-completions endpoint."""
+    body = json.dumps({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "You are a careful document-structure parser. Preserve source wording, order, numbers, and all supplied markers exactly."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.0,
+        "stream": False,
+    }).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    request = urllib.request.Request(
+        base_url.rstrip("/") + "/chat/completions",
+        data=body,
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:1500]
+        raise RuntimeError(f"Local AI HTTP {exc.code}: {detail}") from exc
+    choices = payload.get("choices", [])
+    content = choices[0].get("message", {}).get("content") if choices else None
+    if isinstance(content, list):
+        content = "\n".join(
+            item.get("text", "") for item in content if isinstance(item, dict)
+        )
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError("Local AI endpoint returned empty chat content.")
+    return content.strip()
+
+
 def codex_response(prompt: str, model: str | None, timeout: int) -> str:
     cli = shutil.which(os.getenv("CODEX_CLI", "codex"))
     if not cli:
@@ -426,6 +464,13 @@ def convert_one(pdf_path: Path, output_path: Path, args: argparse.Namespace, run
                 raw = openai_response(prompt, args.model, args.base_url, page_images or None)
             elif args.provider == "codex":
                 raw = codex_response(prompt, args.model, args.timeout)
+            elif args.provider == "local":
+                local_base_url = os.getenv("STRUCTURARAG_LOCAL_AI_BASE_URL", "http://127.0.0.1:11434/v1")
+                local_model = os.getenv("STRUCTURARAG_LOCAL_AI_MODEL", "qwen2.5:7b-instruct")
+                local_api_key = os.getenv("STRUCTURARAG_LOCAL_AI_API_KEY")
+                raw = local_ai_response(
+                    prompt, local_model, local_base_url, local_api_key, args.timeout
+                )
             else:
                 raw = ""
             converted = validate_llm_output(raw, group) if args.provider != "heuristic" else ""
@@ -462,7 +507,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--provider", choices=("openai", "codex", "heuristic"), default="openai")
+    parser.add_argument("--provider", choices=("openai", "codex", "heuristic", "local"), default="openai")
     parser.add_argument("--model", default=os.getenv("OPENAI_MODEL", "gpt-4.1"), help="Responses API model or optional Codex CLI model")
     parser.add_argument("--base-url", default=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"))
     parser.add_argument("--pages-per-call", type=int, default=2)
@@ -477,6 +522,10 @@ def main() -> int:
         parser.error("--pages-per-call must be >= 1")
     if args.vision and args.provider != "openai":
         parser.error("--vision saat ini hanya tersedia dengan --provider openai")
+    if args.provider == "local" and not os.getenv("STRUCTURARAG_LOCAL_AI_BASE_URL"):
+        if os.getenv("VERCEL"):
+            parser.error("Atur STRUCTURARAG_LOCAL_AI_BASE_URL ke endpoint HTTPS model lokal/self-hosted yang dapat diakses Vercel.")
+
     if not args.input_dir.is_dir():
         parser.error(f"Input directory not found: {args.input_dir}")
     pdfs = sorted(p for p in args.input_dir.glob("*.pdf") if not p.name.startswith("._"))
