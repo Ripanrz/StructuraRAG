@@ -67,7 +67,7 @@ git clone https://github.com/Ripanrz/StructuraRAG.git
 cd StructuraRAG
 
 python -m venv .venv
-.\\.venv\\Scripts\\Activate.ps1
+.\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 ~~~
 
@@ -77,7 +77,7 @@ python -m pip install -r requirements.txt
 ### Rule-Based (offline)
 
 ~~~powershell
-python Tools_Formatting\\convert_pdf_batch.py --provider heuristic --limit 1
+python Tools_Formatting\convert_pdf_batch.py --provider heuristic --limit 1
 ~~~
 
 ### AI Lokal (Ollama)
@@ -88,14 +88,14 @@ ollama serve
 
 $env:STRUCTURARAG_LOCAL_AI_BASE_URL = "http://127.0.0.1:11434/v1"
 $env:STRUCTURARAG_LOCAL_AI_MODEL = "qwen2.5:7b-instruct"
-python Tools_Formatting\\convert_pdf_batch.py --provider local --limit 1
+python Tools_Formatting\convert_pdf_batch.py --provider local --limit 1
 ~~~
 
 ### Direct OpenAI API adapter (developer use)
 
 ~~~powershell
 $env:OPENAI_API_KEY = "your-api-key"
-python Tools_Formatting\\convert_pdf_batch.py --provider openai --limit 1
+python Tools_Formatting\convert_pdf_batch.py --provider openai --limit 1
 ~~~
 
 The API-key adapter is separate from the planned ChatGPT OAuth Cloud mode. Never put credentials in source code or browser JavaScript.
@@ -105,7 +105,7 @@ The API-key adapter is separate from the planned ChatGPT OAuth Cloud mode. Never
 After installing Tesseract with Indonesian and English language data:
 
 ~~~powershell
-python Tools_Formatting\\convert_pdf_batch.py --provider heuristic --ocr --limit 1
+python Tools_Formatting\convert_pdf_batch.py --provider heuristic --ocr --limit 1
 ~~~
 
 The converter uses pdf-e-hukum as its default input directory and docx-e-hukum-generated as its default output directory. Both paths can be changed with the input/output directory arguments. Existing DOCX files are skipped unless overwrite is explicitly enabled.
@@ -114,7 +114,7 @@ The converter uses pdf-e-hukum as its default input directory and docx-e-hukum-g
 ## Run the Local Web Application
 
 ~~~powershell
-.\\webapp\\start.ps1
+.\webapp\start.ps1
 ~~~
 
 Open http://127.0.0.1:8000.
