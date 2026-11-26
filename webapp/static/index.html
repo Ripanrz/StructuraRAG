@@ -4,7 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101b2d">
-  <title>StructuraRAG · RAG Document Studio</title>
+  <meta name="description" content="Structure-aware document preprocessing for Retrieval-Augmented Generation.">
+  <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
+  <title>StructuraRAG · Document Intelligence</title>
   <style>
     :root { color-scheme: light; --ink:#14243b; --muted:#617086; --line:#dfe6ee; --paper:#fff; --canvas:#f4f7fa; --navy:#101b2d; --blue:#285b9d; --gold:#c59b55; --green:#21745a; --red:#a73f42; }
     * { box-sizing:border-box }
@@ -13,7 +15,10 @@
     .topbar { background:var(--navy); color:#f7f8fb; border-bottom:3px solid var(--gold) }
     .top-inner { width:min(1120px,calc(100% - 40px)); margin:auto; height:76px; display:flex; align-items:center; justify-content:space-between }
     .brand { display:flex; align-items:center; gap:13px; letter-spacing:.02em }
-    .brand-mark { width:38px; height:38px; border:1px solid #c9a968; border-radius:10px; color:#e7c888; display:grid; place-items:center; font-family:Georgia,serif; font-size:22px }
+    .brand-mark { width:40px; height:40px; border-radius:12px; display:grid; place-items:center; overflow:hidden; box-shadow:0 3px 12px #0003 }
+    .brand-mark img { display:block; width:40px; height:40px }
+    .brand-name { font-weight:700; font-size:16px; letter-spacing:.01em }
+    .brand-sub { color:#aeb9c7; font-size:10px; letter-spacing:.14em; text-transform:uppercase }
     .brand-name { font-weight:650; font-size:15px }
     .brand-sub { color:#aeb9c7; font-size:11px; letter-spacing:.12em; text-transform:uppercase }
     .local-tag { color:#d7e1ec; border:1px solid #43536a; padding:6px 10px; border-radius:999px; font-size:12px }
@@ -38,6 +43,10 @@
     .hidden { display:none!important }
     .actions { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:18px }
     .format-note { color:var(--muted); font-size:12px }
+    .mode-field { margin:0 0 16px }
+    .mode-label { display:block; font-weight:650; font-size:13px; margin-bottom:7px }
+    .mode-select { width:100%; border:1px solid var(--line); border-radius:9px; background:#fff; color:var(--ink); padding:11px 12px; outline-color:var(--blue) }
+    .mode-help { color:var(--muted); font-size:12px; margin:7px 0 0 }
     .primary { border:0; background:var(--navy); color:white; border-radius:9px; padding:11px 17px; font-weight:650; cursor:pointer; transition:.15s }
     .primary:hover { background:#203958 }
     .primary:disabled { opacity:.45; cursor:not-allowed }
@@ -82,7 +91,7 @@
   <header class="topbar">
     <div class="top-inner">
       <div class="brand"><div class="brand-mark"><img src="/static/logo.svg" alt="" width="26" height="26"></div><div><div class="brand-name">StructuraRAG</div><div class="brand-sub">DOCUMENT INTELLIGENCE</div></div></div>
-      <div class="local-tag">Pemrosesan lokal · Codex OAuth</div>
+      <div class="local-tag">Local-first · AI optional</div>
     </div>
   </header>
   <main>
@@ -94,6 +103,15 @@
       <section class="card">
         <div class="card-head"><h2 class="card-title">Konversi dokumen</h2><span class="step">01 — Unggah & proses</span></div>
         <div class="card-body">
+          <div class="mode-field">
+            <label class="mode-label" for="provider">Processing mode</label>
+            <select class="mode-select" id="provider">
+              <option value="heuristic">Rule-based · Offline (no AI login)</option>
+              <option value="codex">AI-assisted · Codex CLI</option>
+              <option value="openai">AI-assisted · OpenAI API</option>
+            </select>
+            <p class="mode-help" id="provider-help">Mode offline memakai aturan deterministik sebagai baseline. Cocok untuk pemrosesan awal, tetapi struktur hasil tetap perlu diperiksa.</p>
+          </div>
           <label class="drop" id="drop" for="pdf-file">
             <div><div class="drop-icon">↑</div><strong>Pilih PDF atau tarik file ke sini</strong><span>PDF saja · maks. 50 MB · satu dokumen per proses</span><span class="file-name" id="file-name"></span></div>
           </label>
@@ -104,15 +122,15 @@
       </section>
       <aside class="side">
         <section class="card status-card">
-          <div class="status-top"><div class="status-heading"><span class="dot" id="codex-dot"></span>Status Codex</div><span class="badge" id="codex-badge">Memeriksa</span></div>
-          <p class="status-copy" id="codex-copy">Memeriksa Codex CLI dan sesi OAuth di mesin ini…</p>
-          <div class="commands" id="login-commands">codex login<br>codex login status</div>
+          <div class="status-top"><div class="status-heading"><span class="dot" id="codex-dot"></span>Status AI provider</div><span class="badge" id="codex-badge">Memeriksa</span></div>
+          <p class="status-copy" id="codex-copy">Memeriksa konfigurasi provider AI…</p>
+          <div class="commands" id="login-commands">Codex: codex login<br>OpenAI: set OPENAI_API_KEY</div>
           <button class="text-button" id="refresh-health">Periksa ulang koneksi</button>
         </section>
         <section class="card rules">
           <h2>Yang perlu diketahui</h2>
           <div class="rule"><span class="rule-icon">01</span><span><b>Mulai dari satu PDF.</b> Tinjau hasil sebelum memproses dokumen lain.</span></div>
-          <div class="rule"><span class="rule-icon">02</span><span><b>LLM bisa keliru.</b> Periksa heading, tabel, dan kelengkapan isi sebelum dipakai.</span></div>
+          <div class="rule"><span class="rule-icon">02</span><span><b>AI bersifat opsional.</b> Gunakan Codex atau OpenAI hanya untuk struktur yang ambigu.</span></div>
           <div class="rule"><span class="rule-icon">03</span><span><b>Scanned PDF.</b> OCR perlu Tesseract dan bahasa Indonesian/English disiapkan di mesin.</span></div>
           <div class="rule"><span class="rule-icon">04</span><span><b>Jangan expose server lokal.</b> Aplikasi ini belum punya multi-user auth.</span></div>
         </section>
@@ -126,6 +144,8 @@
   </main>
   <script>
     const input = document.querySelector('#pdf-file');
+    const providerSelect = document.querySelector('#provider');
+    const providerHelp = document.querySelector('#provider-help');
     const drop = document.querySelector('#drop');
     const submit = document.querySelector('#submit');
     const nameLabel = document.querySelector('#file-name');
@@ -133,13 +153,34 @@
     let selectedFile = null;
     let pollTimer = null;
     let codexAuthenticated = false;
+    let openaiConfigured = false;
+
+    function canSubmit() {
+      if (!selectedFile || !selectedFile.name.toLowerCase().endsWith('.pdf')) return false;
+      if (selectedFile.size > 50 * 1024 * 1024) return false;
+      if (providerSelect.value === 'heuristic') return true;
+      if (providerSelect.value === 'codex') return codexAuthenticated;
+      if (providerSelect.value === 'openai') return openaiConfigured;
+      return false;
+    }
+
+    function updateProviderState() {
+      const provider = providerSelect.value;
+      providerHelp.textContent = provider === 'heuristic'
+        ? 'Mode offline memakai aturan deterministik sebagai baseline. Gratis dan tidak membutuhkan login AI; hasil heuristik tetap perlu ditinjau.'
+        : provider === 'codex'
+          ? (codexAuthenticated ? 'Codex CLI terautentikasi pada mesin ini. Konten halaman dikirim untuk rekonstruksi struktur berbantuan AI.' : 'Jalankan codex login pada terminal mesin ini sebelum memilih mode ini.')
+          : (openaiConfigured ? 'Kredensial OpenAI terpasang pada environment server lokal. Jangan memasukkan API key ke browser.' : 'Set OPENAI_API_KEY atau OPENAI_BEARER_TOKEN pada environment sebelum memakai mode ini.');
+      submit.disabled = !canSubmit();
+    }
 
     function chooseFile(file) {
       selectedFile = file || null;
       nameLabel.textContent = selectedFile ? `${selectedFile.name} · ${(selectedFile.size / 1024 / 1024).toFixed(2)} MB` : '';
-      submit.disabled = !selectedFile || !selectedFile.name.toLowerCase().endsWith('.pdf') || !codexAuthenticated;
+      updateProviderState();
     }
     input.addEventListener('change', () => chooseFile(input.files[0]));
+    providerSelect.addEventListener('change', updateProviderState);
     for (const eventName of ['dragenter','dragover']) drop.addEventListener(eventName, e => { e.preventDefault(); drop.classList.add('drag'); });
     for (const eventName of ['dragleave','drop']) drop.addEventListener(eventName, e => { e.preventDefault(); drop.classList.remove('drag'); });
     drop.addEventListener('drop', e => chooseFile(e.dataTransfer.files[0]));
@@ -165,7 +206,7 @@
         jobPanel.append(list);
       }
       if (['completed','failed'].includes(job.status)) {
-        submit.disabled = !selectedFile || !codexAuthenticated;
+        updateProviderState();
         if (pollTimer) clearInterval(pollTimer);
         refreshHistory();
       }
@@ -179,7 +220,7 @@
       if (!selectedFile) return;
       submit.disabled = true; submit.textContent = 'Mengunggah…';
       jobPanel.classList.remove('hidden'); jobPanel.textContent = 'Mengunggah PDF ke proses lokal…';
-      const form = new FormData(); form.append('file', selectedFile);
+      const form = new FormData(); form.append('file', selectedFile); form.append('provider', providerSelect.value);
       try {
         const response = await fetch('/api/jobs', { method:'POST', headers:{'X-KMS-Request':'1'}, body:form });
         const result = await response.json();
@@ -187,20 +228,30 @@
         showJob(result); pollTimer = setInterval(() => pollJob(result.id), 2500);
       } catch (error) {
         jobPanel.textContent = error.message || 'Terjadi kesalahan.';
-        submit.disabled = false;
+        submit.disabled = !canSubmit();
       } finally { submit.innerHTML = 'Mulai konversi <span aria-hidden="true">→</span>'; }
     });
 
     async function refreshHealth() {
       const copy = document.querySelector('#codex-copy'); const badge = document.querySelector('#codex-badge'); const dot = document.querySelector('#codex-dot');
       try {
-        const response = await fetch('/api/health'); const health = await response.json(); const codex = health.codex;
+        const response = await fetch('/api/health'); const health = await response.json();
+        const codex = health.providers.codex;
+        openaiConfigured = Boolean(health.providers.openai.configured);
         codexAuthenticated = Boolean(codex.authenticated);
-        copy.textContent = codex.message; badge.textContent = codex.authenticated ? 'Terhubung' : (codex.available ? 'Perlu login' : 'CLI tidak ada');
-        badge.className = `badge ${codex.authenticated ? 'ok' : 'error'}`; dot.className = `dot ${codex.authenticated ? 'ok' : ''}`;
-        document.querySelector('#login-commands').classList.toggle('hidden', codex.authenticated);
-        submit.disabled = !selectedFile || !codexAuthenticated;
-      } catch (_) { copy.textContent = 'Server aplikasi tidak merespons.'; badge.textContent = 'Offline'; badge.className = 'badge error'; }
+        const aiReady = codexAuthenticated || openaiConfigured;
+        copy.textContent = `Codex: ${codex.message} OpenAI: ${openaiConfigured ? 'credential tersedia.' : 'belum dikonfigurasi.'} Rule-based: selalu tersedia offline.`;
+        badge.textContent = aiReady ? 'AI siap' : 'AI opsional';
+        badge.className = `badge ${aiReady ? 'ok' : ''}`;
+        dot.className = `dot ${aiReady ? 'ok' : ''}`;
+        document.querySelector('#login-commands').classList.toggle('hidden', aiReady);
+        updateProviderState();
+      } catch (_) {
+        copy.textContent = 'Server aplikasi tidak merespons.';
+        badge.textContent = 'Offline';
+        badge.className = 'badge error';
+        updateProviderState();
+      }
     }
     document.querySelector('#refresh-health').addEventListener('click', refreshHealth);
 
@@ -217,6 +268,7 @@
         });
       } catch (_) { /* keep the rest of the app usable */ }
     }
+    updateProviderState();
     refreshHealth(); refreshHistory();
   </script>
 </body>
