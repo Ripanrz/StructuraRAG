@@ -219,7 +219,7 @@ codex login
 .\webapp\start.ps1
 ```
 
-I then open http://127.0.0.1:8000.
+I then open http://127.0.0.1:8000. The offline rule-based mode needs no AI login. I run `codex login` only when selecting Codex, or configure `OPENAI_API_KEY` / `OPENAI_BEARER_TOKEN` in the server environment when selecting OpenAI.
 
 The web application provides local PDF uploading, background conversion jobs, status tracking, warning notifications, DOCX download, and recent job history. It accepts PDF input only and lets me choose a rule-based offline baseline, Codex CLI, or OpenAI API. AI credentials are optional unless an AI provider is selected.
 
@@ -235,6 +235,11 @@ StructuraRAG/
 │   └── README.md
 ├── docs/
 │   └── ARCHITECTURE.md
+├── tests/
+│   └── test_document_preprocessing.py
+├── .github/
+│   └── workflows/
+│       └── tests.yml
 ├── webapp/
 │   ├── app.py
 │   ├── start.ps1
@@ -268,6 +273,17 @@ The current version does not provide a complete independent semantic chunking en
 - [ ] Add parser-specific regression tests.
 - [ ] Evaluate extraction fidelity and structural accuracy.
 - [ ] Improve job management and production deployment readiness.
+
+## Tests
+
+I run the deterministic regression tests with the Python standard library:
+
+```powershell
+python -m pip install -r Tools_Formatting\\requirements.txt
+python -m unittest discover -s tests -v
+```
+
+GitHub Actions runs the same test suite on pushes and pull requests to `main`.
 
 ## Privacy and Deployment
 
