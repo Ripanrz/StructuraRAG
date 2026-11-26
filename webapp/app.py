@@ -46,6 +46,37 @@ VERCEL_MAX_UPLOAD_BYTES = min(
 VERCEL_CONVERT_TIMEOUT = min(int(os.getenv("STRUCTURARAG_VERCEL_CONVERT_TIMEOUT", "240")), 270)
 IS_VERCEL = os.getenv("VERCEL") == "1"
 
+def _converter_failure_detail(
+    *,
+    returncode: int,
+    report: dict[str, Any],
+    stderr: str,
+    stdout: str,
+    output_exists: bool,
+) -> str:
+    """Build an actionable, bounded message for failed or incomplete conversions."""
+    report_error = report.get("error")
+    if isinstance(report_error, str) and report_error.strip():
+        return report_error.strip()[-1500:]
+    if stderr.strip():
+        return stderr.strip()[-1500:]
+    if stdout.strip() and returncode != 0:
+        return stdout.strip()[-1500:]
+    if returncode == 0 and not output_exists:
+        report_status = str(report.get("status") or "no report")
+        report_source = str(report.get("source") or "unknown source")
+        return (
+            "Converter selesai dengan exit code 0, tetapi file DOCX tidak ditemukan. "
+            f"Report status: {report_status}; source: {report_source}. "
+            "Periksa Vercel Function Logs untuk detail proses converter."
+        )
+    return (
+        f"Converter berhenti dengan exit code {returncode} tanpa pesan diagnostik. "
+        "Periksa Vercel Function Logs untuk detail proses converter."
+    )
+
+
+
 def _allowed_vercel_hosts() -> set[str]:
     """Return deployment and explicitly configured domains accepted by the app."""
     candidates = [
@@ -496,8 +527,14 @@ async def convert_vercel(file: UploadFile = File(...), provider: str = Form("heu
                 report = {}
         output_path = output_dir / f"{Path(source_name).stem}.docx"
         if result.returncode != 0 or not output_path.is_file():
-            detail = (report.get("error") or result.stderr or result.stdout or "Konversi gagal.").strip()
-            raise HTTPException(status_code=422, detail=detail[-1500:])
+            detail = _converter_failure_detail(
+                returncode=result.returncode,
+                report=report,
+                stderr=result.stderr or "",
+                stdout=result.stdout or "",
+                output_exists=output_path.is_file(),
+            )
+            raise HTTPException(status_code=422, detail=detail)
         output_bytes = output_path.read_bytes()
         output_filename = output_path.name
         if len(output_bytes) > 4 * 1024 * 1024:
