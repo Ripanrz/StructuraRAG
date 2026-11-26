@@ -321,17 +321,51 @@ def codex_response(prompt: str, model: str | None, timeout: int) -> str:
         return answer.read_text(encoding="utf-8").strip()
 
 
+def _looks_like_document_title(line: str) -> bool:
+    """Conservative title heuristic: short, alphabetic, predominantly uppercase."""
+    letters = [char for char in line if char.isalpha()]
+    if not letters or len(line) > 180:
+        return False
+    uppercase_ratio = sum(char.isupper() for char in letters) / len(letters)
+    if uppercase_ratio < 0.78:
+        return False
+    if re.match(r"^(BAB|PASAL|PERATURAN|UNDANG-UNDANG)\b", line, re.I) and line.upper().startswith("BAB "):
+        return False
+    return True
+
+
+def _rule_heading(line: str) -> str | None:
+    """Return a structural DSL heading tag only for explicit numbering patterns."""
+    if re.match(r"^BAB\s+[IVXLCDM0-9]+\b", line, re.I):
+        return "@h1"
+    if re.match(r"^[A-Z]\.\s+\S", line):
+        return "@h2"
+    if re.match(r"^\d+(?:\.\d+)*[.)]?\s+\S", line):
+        return "@h3"
+    if re.match(r"^[a-z][.)]\s+\S", line):
+        return "@h4"
+    if re.match(r"^(?:[ivxlcdm]+)[.)]\s+\S", line, re.I):
+        return "@h5"
+    return None
+
+
 def fallback_page_dsl(page_number: int, events: list[dict[str, Any]]) -> str:
-    """Loss-minimizing fallback for diagnosis; never gold-standard output."""
+    """Conservative, deterministic structural labeling; never gold-standard output."""
     output = [f"@PAGE {page_number}"]
+    title_written = False
     for event in events:
         if event["kind"] == "text":
             for line in event["text"].splitlines():
                 line = line.strip()
                 if not line:
                     continue
-                if re.match(r"^BAB\s+[IVXLCDM]+\s*[–—-]\s*\S+", line, re.I):
-                    output.append("@h1 " + line)
+                if page_number == 1 and not title_written and _looks_like_document_title(line):
+                    output.append("@h0 " + line)
+                    title_written = True
+                    continue
+                tag = _rule_heading(line)
+                if tag:
+                    output.append(tag + " " + line)
                 else:
                     output.append(line)
         elif event["kind"] == "table":
@@ -344,7 +378,6 @@ def fallback_page_dsl(page_number: int, events: list[dict[str, Any]]) -> str:
         else:
             output.append(f"@IMAGE [{event['filename']} | page {page_number}, y={event['anchor_y']:.1f}]")
     return "\n".join(output)
-
 
 def validate_llm_output(text: str, page_events: dict[int, list[dict[str, Any]]]) -> str:
     text = text.strip()
