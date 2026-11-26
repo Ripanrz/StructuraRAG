@@ -82,6 +82,31 @@ class VercelDeploymentContractTests(unittest.TestCase):
                 },
             )
 
+    def test_vercel_converter_imports_tempfile_workspace_dependency(self) -> None:
+        self.assertTrue(hasattr(app_module, "tempfile"))
+        self.assertTrue(hasattr(app_module.tempfile, "TemporaryDirectory"))
+
+    def test_converter_failure_diagnostics_explain_missing_output(self) -> None:
+        detail = app_module._converter_failure_detail(
+            returncode=0,
+            report={},
+            stderr="",
+            stdout="",
+            output_exists=False,
+        )
+        self.assertIn("exit code 0", detail)
+        self.assertIn("DOCX tidak ditemukan", detail)
+
+    def test_converter_failure_diagnostics_preserve_stderr(self) -> None:
+        detail = app_module._converter_failure_detail(
+            returncode=1,
+            report={},
+            stderr="PyMuPDF failed during extraction",
+            stdout="",
+            output_exists=False,
+        )
+        self.assertEqual(detail, "PyMuPDF failed during extraction")
+
     def test_vercel_local_model_requires_https_endpoint(self) -> None:
         with patch.object(app_module, "IS_VERCEL", True):
             with patch.dict(os.environ, {"STRUCTURARAG_LOCAL_AI_BASE_URL": "http://localhost:11434/v1"}):
