@@ -69,8 +69,8 @@ async def local_request_guard(request, call_next):
         vercel_host = os.getenv("VERCEL_URL", "").split(":", 1)[0].lower()
         if vercel_host:
             allowed_hosts.add(vercel_host)
-        if not host.endswith(".vercel.app") and host not in allowed_hosts:
-            return JSONResponse({"detail": "Host tidak diizinkan."}, status_code=403)
+        if host not in allowed_hosts:
+            return JSONResponse({"detail": "Host tidak diizinkan. Tambahkan domain kustom ke STRUCTURARAG_ALLOWED_HOSTS bila diperlukan."}, status_code=403)
 
         # Optional HTTP Basic protection. Configure STRUCTURARAG_ACCESS_PASSWORD
         # before exposing a deployment that processes private documents.
