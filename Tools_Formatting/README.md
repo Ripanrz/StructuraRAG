@@ -1,6 +1,6 @@
-# Gold standard profiler and PDF → RAG DOCX batch converter
+# StructuraRAG — PDF to Structured RAG Document Tools
 
-This tool was built from the actual `docx-e-hukum` reference corpus. Run commands from the project root (`AI KMS`).
+I built this tool around a legal-document reference corpus stored locally in `docx-e-hukum`. Run commands from the StructuraRAG repository root.
 
 ## Observed gold standard
 
@@ -49,7 +49,7 @@ The Codex path requires a locally installed, already authenticated CLI. It is se
 
 ## Run the batch
 
-The default input is `pdf-e-hukum` and output is a separate `docx-e-hukum-generated` directory, so gold-standard references are never overwritten.
+The default input is `pdf-e-hukum` and output is a separate `docx-e-hukum-generated` directory, so source references are never overwritten.
 
 ```powershell
 # Convert a pilot file first; output DOCX, matching TXT, manifest, and batch report
