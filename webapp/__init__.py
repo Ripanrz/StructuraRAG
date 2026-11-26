@@ -1,1 +1,1 @@
-"""E-Hukum local web interface."""
+"""StructuraRAG web application package."""
