@@ -30,277 +30,167 @@ I aim to build a document preprocessing system that can:
 
 ## Current Implementation
 
-| Component | Current capability |
+| Component | Current status |
 |---|---|
-| PDF extraction | Text, layout blocks, tables, and embedded images |
-| Scanned PDF | Optional OCR using Tesseract |
-| Visual interpretation | Optional page-image processing through the OpenAI provider |
-| Structural labeling | Rule-based fallback plus optional LLM-assisted reconstruction |
-| Table preservation | Inline table DSL |
-| Image preservation | Image anchors and embedded DOCX images |
-| CLI output | DOCX, TXT/DSL, JSON manifest, JSONL batch report |
-| Gold-standard profiling | DOCX corpus analysis |
-| Local interface | FastAPI-based single-user web application |
+| PDF extraction | Implemented with PyMuPDF |
+| PDF tables and images | Extracted with layout anchors |
+| Scanned PDF OCR | Optional Tesseract in supported local environments |
+| Rule-Based labeling | Deterministic title, BAB, lettered, and numeric patterns |
+| AI Lokal | Ollama / OpenAI-compatible chat-completions endpoint |
+| AI Cloud OAuth | Planned; remote-hosted ChatGPT plan inference requires OpenAI approval |
+| Output | DOCX, DSL TXT, JSON manifest, JSONL report from the CLI |
+| Web application | Local queue plus stateless Vercel conversion endpoint |
 
-## Supported Input and Output Formats
-
-### Implemented input
-
-| Format | Support | Processing method |
-|---|---|---|
-| PDF | Implemented | PyMuPDF extraction |
-| Scanned PDF | Optional | Tesseract OCR |
-| PDF containing tables | Implemented | PyMuPDF table detection and extraction |
-| PDF containing images | Implemented | Image extraction and positional anchors |
-| DOCX reference corpus | Implemented | WordprocessingML-based structural profiling |
-
-### Planned input extensions
-
-- DOCX document ingestion
-- TXT and Markdown parsing
-- HTML document parsing
-- XLSX spreadsheet extraction
-- PPTX presentation extraction
-
-These formats are architectural targets, not currently supported general-purpose input formats.
-
-### Current output
-
-- DOCX: structured Word document.
-- TXT: plain-text DSL representation.
-- JSON: conversion manifest.
-- JSONL: batch processing report.
-
-The local web application currently offers DOCX download; the CLI converter produces the additional TXT, manifest, and batch-report artifacts.
-
-## Processing Workflow
-
-My current PDF conversion pipeline follows these stages:
-
-1. **Document ingestion:** I load PDF files and inspect their pages using PyMuPDF.
-2. **Layout-aware extraction:** I extract text blocks, coordinates, tables, embedded images, and relevant vector drawing regions.
-3. **Noise filtering:** I identify repeated page headers, footers, watermarks, timestamps, and other predefined noise patterns.
-4. **Optional OCR:** I use Tesseract with Indonesian and English language data for eligible scanned pages when OCR is enabled.
-5. **Structural reconstruction:** I send ordered page content, extracted layout information, reference rules, and previous heading context to the selected processing provider.
-6. **Structural validation:** I validate page markers, image anchors, table markers, heading-depth restrictions, main-title count, and source-token retention.
-7. **Document serialization:** I generate DOCX and matching TXT/DSL files, together with a conversion manifest and batch report.
-8. **Human review:** I review the generated output and warnings before considering it suitable for a production knowledge base.
-
-## Structural Representation
-
-I use an inline DSL to represent document structure.
-
-| Label | Meaning |
-|---|---|
-| `@PAGE` | Original source-page boundary |
-| `@h0` | Main document title |
-| `@h1` | Chapter or BAB |
-| `@h2` | Lettered section |
-| `@h3` | Numbered subsection |
-| `@h4` | Lower-level item |
-| `@h5` | Deeper-level item |
-| `@TABLE_START` | Table beginning |
-| `KOLOM:` | Table header |
-| `@TABLE_END` | Table ending |
-| `@IMAGE` | Image location and reference |
-
-The currently implemented legal-document hierarchy is derived from a reference corpus originally assembled for the E-Hukum workflow. The current profile supports heading levels through `@h5`; I do not generate deeper levels without supporting structural evidence.
-
-Example:
-
-```text
-@PAGE 1
-@h0 UNDANG-UNDANG REPUBLIK INDONESIA
-@h1 BAB I KETENTUAN UMUM
-@h2 Pasal 1
-
-Isi ketentuan hukum ...
-
-@TABLE_START
-KOLOM: Nomor | Keterangan
-1 | Ketentuan pertama
-2 | Ketentuan kedua
-@TABLE_END
-```
-
-This is an illustrative DSL example, not a claim that every converted document has exactly this structure.
+**Input scope:** PDF is the only implemented source-conversion format. DOCX is used as the reference/profiling format. General DOCX, TXT, HTML, XLSX, and PPTX ingestion are roadmap items, not implemented features.
 
 ## Processing Providers
 
-| Provider | Description |
-|---|---|
-| `openai` | Uses the OpenAI Responses API with an API key or supported bearer credential |
-| `codex` | Uses an authenticated local Codex CLI session |
-| `heuristic` | Uses deterministic local rules as a lower-confidence fallback |
+StructuraRAG offers three user-facing modes:
 
-The current heuristic provider is a limited deterministic baseline (including source-order preservation and a basic BAB rule), not a complete semantic hierarchy engine. It runs without AI credentials. The AI providers are optional and can help resolve ambiguous structures.
+| Mode | How it works | AI login |
+|---|---|---|
+| **Rule-Based** | Deterministic extraction and conservative structure rules | Not required |
+| **AI Lokal** | Ollama or another OpenAI-compatible model endpoint I control | Not required when the model server is open locally; endpoint auth may be configured |
+| **AI Cloud** | Intended to use Sign in with ChatGPT OAuth for eligible cloud inference | OAuth required; currently gated for Vercel hosting |
 
-## Rule-based or AI: which should I use?
+The CLI retains direct OpenAI API-key and Codex CLI adapters for development/compatibility. They are not the primary three-mode product interface.
 
-I do not consider an LLM mandatory for document preprocessing. I use deterministic parsers and rules for format extraction, normalization, explicit headings, numbering patterns, page provenance, table boundaries, validation, and chunk serialization. These operations should remain repeatable and testable.
+The current Rule-Based engine recognizes explicit title and numbering patterns, but it is not yet a complete grammar for every legal-document layout. Unrecognized lines remain ordinary paragraphs rather than receiving speculative labels.
 
-I reserve AI for ambiguous headings, irregular layouts, uncertain reading order, and difficult scanned tables or diagrams. AI suggestions must pass deterministic validation and remain traceable to the original source. I do not recommend training a custom model yet; first establish a labeled evaluation set and measure where rules fail.
-
-The current `heuristic` mode is intentionally a baseline, not a complete rule engine. See [the architecture note](docs/ARCHITECTURE.md) for the target hybrid design and evaluation criteria.
 
 ## Installation
 
-I use Python and PowerShell for the current local workflow.
+I use Python 3.12 and PowerShell for the local workflow.
 
-```powershell
+~~~powershell
 git clone https://github.com/Ripanrz/StructuraRAG.git
 cd StructuraRAG
 
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+.\\.venv\\Scripts\\Activate.ps1
+python -m pip install -r requirements.txt
+~~~
 
-python -m pip install -r Tools_Formatting\requirements.txt
-python -m pip install -r webapp\requirements.txt
-```
-
-Install the Codex CLI if I intend to use the Codex provider, then authenticate it:
-
-```powershell
-codex login
-codex login status
-```
 
 ## Command-Line Usage
 
-### OpenAI provider
+### Rule-Based (offline)
 
-I configure the API credential in my current PowerShell session:
+~~~powershell
+python Tools_Formatting\\convert_pdf_batch.py --provider heuristic --limit 1
+~~~
 
-```powershell
+### AI Lokal (Ollama)
+
+~~~powershell
+ollama pull qwen2.5:7b-instruct
+ollama serve
+
+$env:STRUCTURARAG_LOCAL_AI_BASE_URL = "http://127.0.0.1:11434/v1"
+$env:STRUCTURARAG_LOCAL_AI_MODEL = "qwen2.5:7b-instruct"
+python Tools_Formatting\\convert_pdf_batch.py --provider local --limit 1
+~~~
+
+### Direct OpenAI API adapter (developer use)
+
+~~~powershell
 $env:OPENAI_API_KEY = "your-api-key"
+python Tools_Formatting\\convert_pdf_batch.py --provider openai --limit 1
+~~~
 
-python Tools_Formatting\convert_pdf_batch.py --provider openai --limit 1
-```
+The API-key adapter is separate from the planned ChatGPT OAuth Cloud mode. Never put credentials in source code or browser JavaScript.
 
-### Codex provider
+### Optional OCR
 
-```powershell
-python Tools_Formatting\convert_pdf_batch.py --provider codex --limit 1
-```
+After installing Tesseract with Indonesian and English language data:
 
-### Offline heuristic provider
+~~~powershell
+python Tools_Formatting\\convert_pdf_batch.py --provider heuristic --ocr --limit 1
+~~~
 
-```powershell
-python Tools_Formatting\convert_pdf_batch.py --provider heuristic --limit 1
-```
+The converter uses pdf-e-hukum as its default input directory and docx-e-hukum-generated as its default output directory. Both paths can be changed with the input/output directory arguments. Existing DOCX files are skipped unless overwrite is explicitly enabled.
 
-### Enable OCR
-
-After installing Tesseract and its Indonesian and English language data:
-
-```powershell
-python Tools_Formatting\convert_pdf_batch.py --provider openai --ocr --limit 1
-```
-
-### Enable visual page interpretation
-
-```powershell
-python Tools_Formatting\convert_pdf_batch.py --provider openai --vision --limit 1
-```
-
-### Process all available PDF documents
-
-```powershell
-python Tools_Formatting\convert_pdf_batch.py --provider openai
-```
-
-By default, the converter uses `pdf-e-hukum` as its default input directory and `docx-e-hukum-generated` as its default output directory. These legacy directory names remain configurable through `--input-dir` and `--output-dir`. Existing DOCX files are skipped unless I explicitly supply `--overwrite`.
 
 ## Run the Local Web Application
 
-I start the local application from the project root:
+~~~powershell
+.\\webapp\\start.ps1
+~~~
 
-```powershell
-.\webapp\start.ps1
-```
+Open http://127.0.0.1:8000.
 
-I then open http://127.0.0.1:8000. The offline rule-based mode needs no AI login. I run `codex login` only when selecting Codex, or configure `OPENAI_API_KEY` / `OPENAI_BEARER_TOKEN` in the server environment when selecting OpenAI.
+Rule-Based works without AI credentials. For AI Lokal, start Ollama and set STRUCTURARAG_LOCAL_AI_BASE_URL and STRUCTURARAG_LOCAL_AI_MODEL in the same terminal before launching the application.
 
-The web application provides local PDF uploading, background conversion jobs, status tracking, warning notifications, DOCX download, and recent job history. It accepts PDF input only and lets me choose a rule-based offline baseline, Codex CLI, or OpenAI API. AI credentials are optional unless an AI provider is selected.
+The local app supports a SQLite-backed job queue and recent job history. It currently accepts PDF input only.
+
 
 ## Project Structure
 
-```text
+~~~text
 StructuraRAG/
+├── index.py
+├── requirements.txt
+├── vercel.json
+├── .python-version
+├── .env.example
 ├── Tools_Formatting/
 │   ├── analyze_gold_standard.py
 │   ├── convert_pdf_batch.py
 │   ├── gold_standard_rules.md
-│   ├── requirements.txt
-│   └── README.md
+│   └── requirements.txt
 ├── docs/
-│   └── ARCHITECTURE.md
+│   ├── ARCHITECTURE.md
+│   └── VERCEL_DEPLOYMENT.md
 ├── tests/
-│   └── test_document_preprocessing.py
-├── .github/
-│   └── workflows/
-│       └── tests.yml
-├── webapp/
-│   ├── app.py
-│   ├── start.ps1
-│   ├── requirements.txt
-│   ├── README.md
-│   └── static/
-│       ├── index.html
-│       └── logo.svg
-├── .gitignore
-└── README.md
-```
+│   ├── test_document_preprocessing.py
+│   └── test_vercel_deployment.py
+├── .github/workflows/tests.yml
+└── webapp/
+    ├── app.py
+    ├── start.ps1
+    ├── requirements.txt
+    └── static/
+        ├── index.html
+        └── logo.svg
+~~~
+
 
 ## Quality Assurance and Limitations
 
-I use structural checks to reduce the risk of content loss and malformed output. These checks include source-page marker verification, image-anchor integrity, balanced table-marker counts, heading-level restrictions, main-title validation, and minimum source-token retention.
+The converter validates page markers, image-anchor integrity, balanced table markers, heading-depth limits, main-title count for AI output, source-token retention, and preservation of numeric tokens.
 
-These checks do not establish complete semantic accuracy. LLM-generated heading classifications, legal terminology, numerical references, tables, and reading order still require human review.
+These checks reduce risk but do not prove semantic correctness. Review legal wording, negations, article references, dates, quantities, tables, and reading order before using output as a trusted knowledge source.
 
-The current version does not provide a complete independent semantic chunking engine, embedding generation, vector-database integration, or production-grade multi-user deployment. The current heuristic mode is a limited offline baseline, not a mature general-purpose rule engine. Page groups sent to a model are processing batches, not final RAG chunks.
+The Rule-Based provider now recognizes explicit title/BAB/letter/number patterns, but ambiguous headings are deliberately left as paragraphs. A complete independent structure-aware chunking engine, CDR, embedding generation, vector-database integration, and multi-format ingestion are not yet implemented. Pages grouped into model calls are processing batches, not final RAG chunks.
 
-## Roadmap
-
-- [ ] Implement a unified intermediate document representation.
-- [ ] Add DOCX, TXT, Markdown, and HTML input adapters.
-- [ ] Add XLSX and PPTX extraction modules.
-- [ ] Formalize the structural labeling grammar.
-- [ ] Implement hierarchy-aware chunking.
-- [ ] Add chunk-level metadata and provenance tracking.
-- [ ] Introduce configurable token limits and overlap policies.
-- [ ] Add JSON and JSONL chunk export.
-- [ ] Add parser-specific regression tests.
-- [ ] Evaluate extraction fidelity and structural accuracy.
-- [ ] Improve job management and production deployment readiness.
 
 ## Tests
 
-I run the deterministic regression tests with the Python standard library:
-
-```powershell
-python -m pip install -r Tools_Formatting\requirements.txt
+~~~powershell
+python -m pip install -r requirements.txt
 python -m unittest discover -s tests -v
-```
+~~~
 
-GitHub Actions runs the same test suite on pushes and pull requests to `main`.
+GitHub Actions runs the regression tests on pushes and pull requests to main.
+
+
+## Deploy to Vercel
+
+The repository includes a root FastAPI entrypoint and Vercel configuration. Rule-Based is available without an AI provider; AI Lokal works when Vercel can reach a secure HTTPS model endpoint.
+
+1. Import Ripanrz/StructuraRAG in Vercel.
+2. Keep the Root Directory at the repository root.
+3. Let Vercel detect the Python/FastAPI runtime and deploy.
+4. Set STRUCTURARAG_ACCESS_PASSWORD before sharing the URL.
+5. Open /api/health and test a small PDF using Rule-Based.
+
+The hosted route processes synchronously, accepts 4 MiB by default, returns DOCX directly, and does not persist uploaded documents or job history. Large PDFs need an external worker/storage design.
+
+See [the full Vercel deployment guide](docs/VERCEL_DEPLOYMENT.md) for environment variables, AI Lokal HTTPS setup, password protection, limits, and OAuth prerequisites.
 
 ## Privacy and Deployment
 
-I designed the current web application for single-user local execution. It binds to loopback and does not provide production-grade multi-user authentication.
+The local application is single-user and binds to loopback. The Vercel application is stateless for conversion requests. Set password protection or Vercel Deployment Protection before sharing the hosted URL. Keep API keys and model endpoint credentials in server-side environment variables.
 
-Source documents, generated files, local job data, and credential material must not be committed to the repository. I review `git status` before committing changes.
+The AI Cloud option uses the intended Sign in with ChatGPT OAuth path. It remains disabled for remote Vercel hosting until OpenAI approves remote-hosted ChatGPT plan inference and the complete secure token/session implementation is delivered. OAuth identity sign-in alone does not grant plan-based inference.
 
-A public deployment requires authentication, authorization, durable storage, a persistent worker architecture, resource limits, and an appropriate credential-management strategy. The existing local application is not a ready-to-deploy public Vercel service.
-
-## Project Philosophy
-
-I believe reliable RAG begins with reliable document understanding.
-
-A document should not be reduced to an arbitrary collection of text fragments. Its structure, hierarchy, references, and contextual relationships are part of the information itself.
-
-My goal is to build a preprocessing engine that preserves these relationships as much as possible before documents enter downstream retrieval and generation systems.
-
----
-
-**Developed by [Ripanrz](https://github.com/Ripanrz)**
