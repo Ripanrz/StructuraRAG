@@ -1,6 +1,6 @@
 # StructuraRAG — Local Web Interface
 
-Web interface for the existing PDF-to-RAG-DOCX converter. It uploads one PDF, queues conversion, reports status, and serves the resulting DOCX. The worker invokes `Tools_Formatting/convert_pdf_batch.py --provider codex` and therefore uses the Codex CLI OAuth session on the same machine.
+Local web interface for StructuraRAG's current PDF-to-structured-DOCX workflow. It uploads one PDF, queues conversion, reports status, and serves the resulting DOCX. The worker invokes `Tools_Formatting/convert_pdf_batch.py --provider codex` and therefore uses the authenticated Codex CLI session on the same machine.
 
 ## Run on Windows
 
@@ -15,7 +15,7 @@ codex login status
 .\webapp\start.ps1
 ```
 
-Open <http://127.0.0.1:8000>. Keep the terminal open while the site is in use. A job and its artifacts are stored under `.webapp-data/`; do not commit this directory. The web process is intentionally bound to loopback and has no multi-user authentication.
+Open <http://127.0.0.1:8000>. Keep the terminal open while the site is in use. A job and its artifacts are stored under `.webapp-data/`; do not commit this directory. The web process is intentionally bound to loopback and has no multi-user authentication. This prototype currently supports PDF uploads only.
 
 Optional settings:
 
