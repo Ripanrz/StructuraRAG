@@ -182,8 +182,8 @@ def _run_job(job_id: str) -> None:
     output_dir = job_dir / "output"
     output_name = f"{Path(row['source_name']).stem}.docx"
     output_path = output_dir / output_name
-    provider = row["provider"] if row["provider"] in {"heuristic", "codex", "openai"} else "heuristic"
-    provider_label = {"heuristic": "rule-based", "codex": "Codex AI", "openai": "OpenAI AI"}[provider]
+    provider = row["provider"] if row["provider"] in {"heuristic", "local", "codex", "openai"} else "heuristic"
+    provider_label = {"heuristic": "Rule-Based", "local": "AI Lokal", "codex": "Codex AI", "openai": "OpenAI API"}[provider]
     _set_job(job_id, status="running", message=f"Mengekstrak PDF dan menyusun struktur RAG dengan mode {provider_label}…")
     if not CONVERTER.is_file():
         _set_job(job_id, status="failed", message="Skrip konverter tidak ditemukan.")
@@ -202,6 +202,8 @@ def _run_job(job_id: str) -> None:
     if os.getenv("STRUCTURARAG_ENABLE_OCR", os.getenv("KMS_ENABLE_OCR", "0")) == "1":
         command.append("--ocr")
     process_env = os.environ.copy()
+    if provider == "local":
+        process_env["STRUCTURARAG_LOCAL_AI_BASE_URL"] = _local_ai_base_url()
     if provider == "local":
         process_env["STRUCTURARAG_LOCAL_AI_BASE_URL"] = _local_ai_base_url()
     if provider == "codex" and not codex_model:
