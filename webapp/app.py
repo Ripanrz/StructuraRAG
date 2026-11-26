@@ -348,12 +348,12 @@ async def create_job(
     if IS_VERCEL:
         raise HTTPException(status_code=410, detail="Vercel deployment uses stateless /api/convert, not the local background-job queue.")
     _ensure_worker()
+    if provider == "cloud_oauth":
+        raise HTTPException(status_code=503, detail="AI Cloud OAuth belum diaktifkan. Untuk deployment jarak jauh, akses ChatGPT plan inference perlu persetujuan OpenAI.")
     if provider not in {"heuristic", "local", "codex", "openai"}:
         raise HTTPException(status_code=400, detail="Provider tidak dikenal.")
     if provider == "local" and not _local_ai_configured():
         raise HTTPException(status_code=503, detail="AI Lokal belum dikonfigurasi. Atur STRUCTURARAG_LOCAL_AI_BASE_URL.")
-    if provider == "cloud_oauth":
-        raise HTTPException(status_code=503, detail="AI Cloud OAuth belum diaktifkan. Untuk deployment jarak jauh, akses ChatGPT plan inference perlu persetujuan OpenAI.")
     if provider == "codex":
         codex = _codex_status()
         if not codex["available"] or not codex["authenticated"]:
@@ -503,6 +503,8 @@ async def convert_vercel(file: UploadFile = File(...), provider: str = Form("heu
 
 @app.get("/api/jobs/{job_id}")
 def get_job(job_id: str) -> dict[str, Any]:
+    if IS_VERCEL:
+        raise HTTPException(status_code=410, detail="Vercel uses stateless /api/convert and does not retain job history.")
     _ensure_worker()
     if not re.fullmatch(r"[0-9a-f]{32}", job_id):
         raise HTTPException(status_code=404, detail="Job tidak ditemukan.")
@@ -514,6 +516,8 @@ def get_job(job_id: str) -> dict[str, Any]:
 
 @app.get("/api/jobs")
 def list_jobs() -> list[dict[str, Any]]:
+    if IS_VERCEL:
+        raise HTTPException(status_code=410, detail="Vercel uses stateless /api/convert and does not retain job history.")
     _ensure_worker()
     with _connect() as connection:
         rows = connection.execute("SELECT * FROM jobs ORDER BY created_at DESC LIMIT 20").fetchall()
