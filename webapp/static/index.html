@@ -97,7 +97,7 @@
   <main>
     <section class="intro">
       <div><div class="eyebrow">STRUCTURE-AWARE PREPROCESSING</div><h1>Documents in.<br>Structured knowledge out.</h1><p class="lead">Unggah PDF untuk mengekstrak teks, tabel, dan elemen visual, lalu menyusunnya menjadi dokumen berstruktur yang siap ditinjau sebelum masuk ke pipeline RAG.</p></div>
-      <div class="secure-note">PDF dan hasil konversi disimpan di perangkat/server tempat aplikasi ini berjalan.</div>
+      <div class="secure-note" id="secure-note">PDF diproses sesuai mode deployment aplikasi.</div>
     </section>
     <div class="grid">
       <section class="card">
@@ -116,7 +116,7 @@
             <div><div class="drop-icon">↑</div><strong>Pilih PDF atau tarik file ke sini</strong><span id="upload-limit">PDF saja · maks. 50 MB · satu dokumen per proses</span><span class="file-name" id="file-name"></span></div>
           </label>
           <input class="hidden" id="pdf-file" type="file" accept="application/pdf,.pdf">
-          <div class="actions"><span class="format-note">DOCX, DSL TXT, dan laporan dibuat per job.</span><button class="primary" id="submit" disabled>Mulai konversi <span aria-hidden="true">→</span></button></div>
+          <div class="actions"><span class="format-note" id="format-note">DOCX, DSL TXT, dan laporan dibuat per job.</span><button class="primary" id="submit" disabled>Mulai konversi <span aria-hidden="true">→</span></button></div>
           <div class="message hidden" id="current-job" aria-live="polite"></div>
         </div>
       </section>
@@ -137,7 +137,7 @@
       </aside>
     </div>
     <section class="card history">
-      <div class="card-head"><h2 class="card-title">Aktivitas terbaru</h2><span class="step">Disimpan lokal</span></div>
+      <div class="card-head"><h2 class="card-title">Aktivitas terbaru</h2><span class="step" id="history-subtitle">Disimpan lokal</span></div>
       <div class="history-list" id="history"><div class="empty">Belum ada dokumen diproses.</div></div>
     </section>
     <div class="foot">StructuraRAG · Output otomatis tetap memerlukan review manusia.</div>
@@ -296,6 +296,15 @@
         runtimeReady = true;
         maxUploadBytes = Number(health.max_upload_bytes) || maxUploadBytes;
         document.querySelector('#upload-limit').textContent = `PDF saja · maks. ${(maxUploadBytes / (1024 * 1024)).toFixed(0)} MB · satu dokumen per proses`;
+        document.querySelector('#secure-note').textContent = runtimeMode === 'vercel'
+          ? 'PDF diproses sementara oleh Vercel Function. File tidak disimpan sebagai riwayat di server.'
+          : 'PDF dan hasil konversi disimpan di penyimpanan lokal pada mesin yang menjalankan aplikasi.';
+        document.querySelector('#format-note').textContent = runtimeMode === 'vercel'
+          ? 'DOCX dikirim langsung ke browser; DSL TXT dan riwayat job tidak disimpan.'
+          : 'DOCX, DSL TXT, dan laporan dibuat per job.';
+        document.querySelector('#history-subtitle').textContent = runtimeMode === 'vercel'
+          ? 'Stateless · tanpa riwayat'
+          : 'Disimpan lokal';
         localAiConfigured = Boolean(health.providers.local?.configured);
         cloudOAuthAvailable = Boolean(health.providers.cloud_oauth?.available);
         const aiReady = localAiConfigured || cloudOAuthAvailable;
@@ -308,7 +317,7 @@
         document.querySelector('#login-commands').textContent = 'Rule-Based: tanpa login\nAI Lokal: Ollama /v1\nAI Cloud: perlu approval OAuth';
         document.querySelector('#login-commands').classList.remove('hidden');
         if (runtimeMode === 'vercel' && !health.access_protected) {
-          copy.textContent += ' PERINGATAN: akses belum dilindungi password; atur STRUCTURARAG_ACCESS_PASSWORD sebelum membagikan URL.';
+          copy.textContent += ' CATATAN KEAMANAN: Basic Auth aplikasi nonaktif. Siapa pun yang dapat mengakses URL dapat mengirim PDF; jangan unggah dokumen rahasia.';
         }
         updateProviderState();
         refreshHistory();
