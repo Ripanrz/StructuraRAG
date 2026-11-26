@@ -6,6 +6,7 @@ provider. The service binds to loopback and is not a multi-user deployment.
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 import os
 import secrets
@@ -80,7 +81,7 @@ async def local_request_guard(request, call_next):
             try:
                 decoded = base64.b64decode(encoded, validate=True).decode("utf-8") if scheme.lower() == "basic" else ""
                 username, separator, password = decoded.partition(":")
-            except (ValueError, UnicodeDecodeError):
+            except (binascii.Error, ValueError, UnicodeDecodeError):
                 username, separator, password = "", "", ""
             expected_user = os.getenv("STRUCTURARAG_ACCESS_USERNAME", "structurarag")
             if (
@@ -126,6 +127,8 @@ def _local_ai_configured() -> bool:
         return False
     parsed = urlparse(base_url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
         return False
     if IS_VERCEL:
         if parsed.scheme != "https" or parsed.hostname.lower() in {"localhost", "127.0.0.1", "::1"}:
