@@ -32,7 +32,7 @@ JOBS_DIR = DATA_ROOT / "jobs"
 DB_PATH = DATA_ROOT / "jobs.sqlite3"
 MAX_UPLOAD_BYTES = int(os.getenv("KMS_MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)))
 
-app = FastAPI(title="E-Hukum RAG Converter", docs_url=None, redoc_url=None)
+app = FastAPI(title="StructuraRAG", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=Path(__file__).with_name("static")), name="static")
 
 _queue: queue.Queue[str] = queue.Queue()
