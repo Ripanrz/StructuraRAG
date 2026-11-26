@@ -5,8 +5,10 @@ provider. The service binds to loopback and is not a multi-user deployment.
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
+import secrets
 import queue
 import re
 import shutil
@@ -50,16 +52,57 @@ _worker_lock = threading.Lock()
 
 @app.middleware("http")
 async def local_request_guard(request, call_next):
-    """Keep this single-user prototype on loopback and reject cross-site posts."""
+    """Apply loopback-only checks locally and host/password checks on Vercel."""
     host = request.headers.get("host", "").split(":", 1)[0].strip("[]").lower()
-    if host not in {"127.0.0.1", "localhost"}:
-        return JSONResponse({"detail": "Aplikasi ini hanya menerima koneksi lokal."}, status_code=403)
-    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-        if request.headers.get("x-kms-request") != "1":
-            return JSONResponse({"detail": "Permintaan tidak valid."}, status_code=403)
-        origin = request.headers.get("origin")
-        if origin and urlparse(origin).hostname not in {"127.0.0.1", "localhost"}:
-            return JSONResponse({"detail": "Origin tidak diizinkan."}, status_code=403)
+    origin = request.headers.get("origin")
+
+    if IS_VERCEL:
+        allowed_hosts = {
+            value.strip().lower()
+            for value in os.getenv("STRUCTURARAG_ALLOWED_HOSTS", "").split(",")
+            if value.strip()
+        }
+        vercel_host = os.getenv("VERCEL_URL", "").split(":", 1)[0].lower()
+        if vercel_host:
+            allowed_hosts.add(vercel_host)
+        if not host.endswith(".vercel.app") and host not in allowed_hosts:
+            return JSONResponse({"detail": "Host tidak diizinkan."}, status_code=403)
+
+        # Optional HTTP Basic protection. Configure STRUCTURARAG_ACCESS_PASSWORD
+        # before exposing a deployment that processes private documents.
+        expected_password = os.getenv("STRUCTURARAG_ACCESS_PASSWORD", "")
+        if expected_password:
+            auth = request.headers.get("authorization", "")
+            scheme, _, encoded = auth.partition(" ")
+            try:
+                decoded = base64.b64decode(encoded, validate=True).decode("utf-8") if scheme.lower() == "basic" else ""
+                username, separator, password = decoded.partition(":")
+            except (ValueError, UnicodeDecodeError):
+                username, separator, password = "", "", ""
+            expected_user = os.getenv("STRUCTURARAG_ACCESS_USERNAME", "structurarag")
+            if (
+                not separator
+                or not secrets.compare_digest(username, expected_user)
+                or not secrets.compare_digest(password, expected_password)
+            ):
+                return JSONResponse(
+                    {"detail": "Authentication required."},
+                    status_code=401,
+                    headers={"WWW-Authenticate": 'Basic realm="StructuraRAG", charset="UTF-8"'},
+                )
+
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"} and origin:
+            origin_host = (urlparse(origin).hostname or "").lower()
+            if origin_host != host:
+                return JSONResponse({"detail": "Origin tidak diizinkan."}, status_code=403)
+    else:
+        if host not in {"127.0.0.1", "localhost"}:
+            return JSONResponse({"detail": "Aplikasi ini hanya menerima koneksi lokal."}, status_code=403)
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            if request.headers.get("x-kms-request") != "1":
+                return JSONResponse({"detail": "Permintaan tidak valid."}, status_code=403)
+            if origin and (urlparse(origin).hostname or "").lower() not in {"127.0.0.1", "localhost"}:
+                return JSONResponse({"detail": "Origin tidak diizinkan."}, status_code=403)
     return await call_next(request)
 
 
@@ -295,6 +338,7 @@ def health() -> dict[str, Any]:
             "openai": {"configured": bool(os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_BEARER_TOKEN"))},
         },
         "max_upload_bytes": VERCEL_MAX_UPLOAD_BYTES if IS_VERCEL else MAX_UPLOAD_BYTES,
+        "access_protected": bool(os.getenv("STRUCTURARAG_ACCESS_PASSWORD")) if IS_VERCEL else True,
     }
 
 
