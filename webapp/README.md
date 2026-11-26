@@ -1,6 +1,6 @@
 # StructuraRAG — Local Web Interface
 
-Local web interface for StructuraRAG's current PDF-to-structured-DOCX workflow. It uploads one PDF, queues conversion, reports status, and serves the resulting DOCX. The worker invokes `Tools_Formatting/convert_pdf_batch.py --provider codex` and therefore uses the authenticated Codex CLI session on the same machine.
+Local web interface for StructuraRAG's current PDF-to-structured-DOCX workflow. It uploads one PDF, queues conversion, reports status, and serves the resulting DOCX. I can choose an offline rule-based baseline, Codex CLI, or OpenAI API. The web worker passes the selected provider to `Tools_Formatting/convert_pdf_batch.py`.
 
 ## Run on Windows
 
@@ -15,7 +15,9 @@ codex login status
 .\webapp\start.ps1
 ```
 
-Open <http://127.0.0.1:8000>. Keep the terminal open while the site is in use. A job and its artifacts are stored under `.webapp-data/`; do not commit this directory. The web process is intentionally bound to loopback and has no multi-user authentication. This prototype currently supports PDF uploads only.
+Open <http://127.0.0.1:8000>. Keep the terminal open while the site is in use. A job and its artifacts are stored under `.webapp-data/`; do not commit this directory. The web process is intentionally bound to loopback and has no multi-user authentication. This prototype currently supports PDF uploads only. The rule-based provider can run without AI credentials.
+
+For the OpenAI provider, I configure `OPENAI_API_KEY` or `OPENAI_BEARER_TOKEN` in the local server environment. The key is never entered into the browser. The Codex provider requires a local authenticated CLI session. The rule-based provider requires neither.
 
 Optional settings:
 
@@ -30,7 +32,7 @@ Optional settings:
 
 ## OAuth and hosting boundary
 
-The app does not copy Codex credentials into the browser or source tree. The local Codex CLI performs ChatGPT OAuth and the server checks `codex login status` before conversion. This is a single-user local deployment.
+The app does not copy Codex credentials into the browser or source tree. When I choose Codex, the local CLI performs sign-in and the server checks `codex login status`. When I choose OpenAI, the server reads the configured environment credential. Rule-based mode does not contact an AI provider. This is a single-user local deployment.
 
 This is **not yet safe to expose directly to the public internet or deploy as a complete Vercel app**. Vercel Functions are ephemeral/serverless, impose a 4.5 MB request/response limit, and do not provide this app's persistent queue/worker model. A proper online version needs an authenticated web tier, durable storage/database, and a long-running worker. Using a ChatGPT plan OAuth flow in a remotely hosted private app also requires OpenAI eligibility/access; local CLI login does not confer that permission. Do not put CLI token files or OAuth refresh tokens in GitHub, browser storage, or ordinary Vercel environment variables.
 
