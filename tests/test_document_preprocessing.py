@@ -38,6 +38,18 @@ class DocumentPreprocessingTests(unittest.TestCase):
         self.assertIn("1 | Ketentuan A", dsl)
         self.assertIn("@TABLE_END", dsl)
 
+    def test_rule_based_mode_labels_explicit_hierarchy(self) -> None:
+        events = [{
+            "kind": "text",
+            "text": "PERATURAN MENTERI CONTOH\nBAB I KETENTUAN UMUM\nA. Ruang Lingkup\n1. Tujuan\nb. Ketentuan",
+        }]
+        dsl = fallback_page_dsl(1, events)
+        self.assertIn("@h0 PERATURAN MENTERI CONTOH", dsl)
+        self.assertIn("@h1 BAB I KETENTUAN UMUM", dsl)
+        self.assertIn("@h2 A. Ruang Lingkup", dsl)
+        self.assertIn("@h3 1. Tujuan", dsl)
+        self.assertIn("@h4 b. Ketentuan", dsl)
+
     def test_validator_preserves_heading_text_and_legal_numbers(self) -> None:
         source = "Pasal 12 mengatur masa berlaku selama 2 tahun."
         events = {1: [{"kind": "text", "text": source}]}
