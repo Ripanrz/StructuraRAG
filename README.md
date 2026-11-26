@@ -7,6 +7,8 @@
     <a href="https://structurarag.vercel.app">
       <img src="https://img.shields.io/badge/Live%20App-Open%20StructuraRAG-111827?style=for-the-badge&logo=vercel&logoColor=white" alt="Open StructuraRAG on Vercel">
     </a>
+  </p>
+  <p>
     <a href="https://github.com/Ripanrz/StructuraRAG/actions/workflows/tests.yml">
       <img src="https://github.com/Ripanrz/StructuraRAG/actions/workflows/tests.yml/badge.svg" alt="GitHub Actions tests">
     </a>
