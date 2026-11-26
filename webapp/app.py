@@ -21,7 +21,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +36,9 @@ MAX_UPLOAD_BYTES = int(os.getenv(
     "STRUCTURARAG_MAX_UPLOAD_BYTES",
     os.getenv("KMS_MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)),
 ))
+VERCEL_MAX_UPLOAD_BYTES = int(os.getenv("STRUCTURARAG_VERCEL_MAX_UPLOAD_BYTES", str(4 * 1024 * 1024)))
+VERCEL_CONVERT_TIMEOUT = min(int(os.getenv("STRUCTURARAG_VERCEL_CONVERT_TIMEOUT", "240")), 270)
+IS_VERCEL = os.getenv("VERCEL") == "1"
 
 app = FastAPI(title="StructuraRAG", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=Path(__file__).with_name("static")), name="static")
@@ -62,6 +65,26 @@ async def local_request_guard(request, call_next):
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _local_ai_base_url() -> str:
+    configured = os.getenv("STRUCTURARAG_LOCAL_AI_BASE_URL", "").strip()
+    if configured:
+        return configured.rstrip("/")
+    return "" if IS_VERCEL else "http://127.0.0.1:11434/v1"
+
+
+def _local_ai_configured() -> bool:
+    base_url = _local_ai_base_url()
+    if not base_url:
+        return False
+    parsed = urlparse(base_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    if IS_VERCEL:
+        if parsed.scheme != "https" or parsed.hostname.lower() in {"localhost", "127.0.0.1", "::1"}:
+            return False
+    return True
 
 
 def _connect() -> sqlite3.Connection:
@@ -179,6 +202,8 @@ def _run_job(job_id: str) -> None:
     if os.getenv("STRUCTURARAG_ENABLE_OCR", os.getenv("KMS_ENABLE_OCR", "0")) == "1":
         command.append("--ocr")
     process_env = os.environ.copy()
+    if provider == "local":
+        process_env["STRUCTURARAG_LOCAL_AI_BASE_URL"] = _local_ai_base_url()
     if provider == "codex" and not codex_model:
         process_env["OPENAI_MODEL"] = ""
     try:
@@ -246,12 +271,24 @@ def health() -> dict[str, Any]:
     _ensure_worker()
     return {
         "status": "ok",
+        "runtime": "vercel" if IS_VERCEL else "local",
         "providers": {
-            "heuristic": {"available": True, "description": "Rule-based offline baseline; no AI login required."},
+            "heuristic": {"available": True, "description": "Deterministic baseline; no AI login required."},
+            "local": {
+                "available": _local_ai_configured(),
+                "configured": _local_ai_configured(),
+                "description": "Ollama or another OpenAI-compatible self-hosted model endpoint.",
+            },
+            "cloud_oauth": {
+                "available": False,
+                "configured": False,
+                "provider": "Sign in with ChatGPT",
+                "reason": "Remote-hosted ChatGPT plan inference requires OpenAI approval. OAuth identity sign-in alone does not grant model inference access.",
+            },
             "codex": _codex_status(),
             "openai": {"configured": bool(os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_BEARER_TOKEN"))},
         },
-        "max_upload_bytes": MAX_UPLOAD_BYTES,
+        "max_upload_bytes": VERCEL_MAX_UPLOAD_BYTES if IS_VERCEL else MAX_UPLOAD_BYTES,
     }
 
 
@@ -261,8 +298,12 @@ async def create_job(
     provider: str = Form("heuristic"),
 ) -> dict[str, Any]:
     _ensure_worker()
-    if provider not in {"heuristic", "codex", "openai"}:
+    if provider not in {"heuristic", "local", "codex", "openai"}:
         raise HTTPException(status_code=400, detail="Provider tidak dikenal.")
+    if provider == "local" and not _local_ai_configured():
+        raise HTTPException(status_code=503, detail="AI Lokal belum dikonfigurasi. Atur STRUCTURARAG_LOCAL_AI_BASE_URL.")
+    if provider == "cloud_oauth":
+        raise HTTPException(status_code=503, detail="AI Cloud OAuth belum diaktifkan. Untuk deployment jarak jauh, akses ChatGPT plan inference perlu persetujuan OpenAI.")
     if provider == "codex":
         codex = _codex_status()
         if not codex["available"] or not codex["authenticated"]:
@@ -308,6 +349,101 @@ async def create_job(
     row = _fetch_job(job_id)
     assert row is not None
     return _job_dict(row)
+
+
+@app.post("/api/convert")
+async def convert_vercel(file: UploadFile = File(...), provider: str = Form("heuristic")) -> Response:
+    """Synchronous, stateless conversion route for Vercel Functions."""
+    if not IS_VERCEL:
+        raise HTTPException(status_code=404, detail="Endpoint ini hanya digunakan pada deployment Vercel.")
+    if provider not in {"heuristic", "local"}:
+        if provider == "cloud_oauth":
+            raise HTTPException(
+                status_code=503,
+                detail="AI Cloud OAuth belum tersedia untuk remote-hosted deployment. OpenAI approval dan implementasi token/session storage masih diperlukan.",
+            )
+        raise HTTPException(status_code=400, detail="Pilih Rule-Based atau AI Lokal untuk deployment Vercel.")
+    if provider == "local" and not _local_ai_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="AI Lokal belum siap. Atur STRUCTURARAG_LOCAL_AI_BASE_URL ke endpoint HTTPS Ollama/OpenAI-compatible yang dapat dijangkau Vercel.",
+        )
+
+    raw = await file.read(VERCEL_MAX_UPLOAD_BYTES + 1)
+    await file.close()
+    if not raw:
+        raise HTTPException(status_code=400, detail="File PDF kosong.")
+    if len(raw) > VERCEL_MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Ukuran PDF melewati batas deployment Vercel ({VERCEL_MAX_UPLOAD_BYTES // (1024 * 1024)} MiB).",
+        )
+    if not raw.startswith(b"%PDF-"):
+        raise HTTPException(status_code=415, detail="Isi berkas bukan PDF yang valid.")
+
+    source_name = _safe_filename(file.filename or "document.pdf")
+    with tempfile.TemporaryDirectory(prefix="structurarag-vercel-") as temporary:
+        work_root = Path(temporary)
+        input_dir = work_root / "input"
+        output_dir = work_root / "output"
+        input_dir.mkdir()
+        output_dir.mkdir()
+        (input_dir / source_name).write_bytes(raw)
+        command = [
+            sys.executable, str(CONVERTER),
+            "--provider", provider,
+            "--input-dir", str(input_dir),
+            "--output-dir", str(output_dir),
+            "--limit", "1",
+            "--pages-per-call", os.getenv("STRUCTURARAG_PAGES_PER_CALL", "1"),
+        ]
+        if os.getenv("STRUCTURARAG_ENABLE_OCR", "0") == "1":
+            command.append("--ocr")
+        process_env = os.environ.copy()
+        if provider == "local":
+            process_env["STRUCTURARAG_LOCAL_AI_BASE_URL"] = _local_ai_base_url()
+        try:
+            result = subprocess.run(
+                command, cwd=ROOT, env=process_env, capture_output=True,
+                text=True, encoding="utf-8", errors="replace",
+                timeout=VERCEL_CONVERT_TIMEOUT, check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise HTTPException(
+                status_code=504,
+                detail="Konversi melewati batas waktu Vercel. Gunakan PDF lebih kecil atau layanan worker khusus untuk dokumen panjang.",
+            ) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"Converter tidak dapat dijalankan: {exc}") from exc
+
+        report_path = output_dir / "batch-report.jsonl"
+        report: dict[str, Any] = {}
+        if report_path.exists():
+            try:
+                entries = report_path.read_text(encoding="utf-8").splitlines()
+                if entries:
+                    report = json.loads(entries[-1])
+            except (OSError, json.JSONDecodeError):
+                report = {}
+        output_path = output_dir / f"{Path(source_name).stem}.docx"
+        if result.returncode != 0 or not output_path.is_file():
+            detail = (report.get("error") or result.stderr or result.stdout or "Konversi gagal.").strip()
+            raise HTTPException(status_code=422, detail=detail[-1500:])
+        output_bytes = output_path.read_bytes()
+        output_filename = output_path.name
+
+    warnings = report.get("warnings", [])
+    headers = {
+        "Content-Disposition": f'attachment; filename="{output_filename}"',
+        "Cache-Control": "no-store, private",
+        "X-StructuraRAG-Provider": provider,
+        "X-StructuraRAG-Warnings": str(len(warnings)),
+    }
+    return Response(
+        content=output_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers=headers,
+    )
 
 
 @app.get("/api/jobs/{job_id}")
