@@ -154,10 +154,11 @@
     let pollTimer = null;
     let codexAuthenticated = false;
     let openaiConfigured = false;
+    let maxUploadBytes = 50 * 1024 * 1024;
 
     function canSubmit() {
       if (!selectedFile || !selectedFile.name.toLowerCase().endsWith('.pdf')) return false;
-      if (selectedFile.size > 50 * 1024 * 1024) return false;
+      if (selectedFile.size > maxUploadBytes) return false;
       if (providerSelect.value === 'heuristic') return true;
       if (providerSelect.value === 'codex') return codexAuthenticated;
       if (providerSelect.value === 'openai') return openaiConfigured;
@@ -225,7 +226,10 @@
         const response = await fetch('/api/jobs', { method:'POST', headers:{'X-KMS-Request':'1'}, body:form });
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || 'Upload gagal.');
-        showJob(result); pollTimer = setInterval(() => pollJob(result.id), 2500);
+        showJob(result);
+        if (['queued','running'].includes(result.status)) {
+          pollTimer = setInterval(() => pollJob(result.id), 2500);
+        }
       } catch (error) {
         jobPanel.textContent = error.message || 'Terjadi kesalahan.';
         submit.disabled = !canSubmit();
@@ -237,6 +241,7 @@
       try {
         const response = await fetch('/api/health'); const health = await response.json();
         const codex = health.providers.codex;
+        maxUploadBytes = Number(health.max_upload_bytes) || maxUploadBytes;
         openaiConfigured = Boolean(health.providers.openai.configured);
         codexAuthenticated = Boolean(codex.authenticated);
         const aiReady = codexAuthenticated || openaiConfigured;
@@ -263,7 +268,10 @@
         jobs.forEach(job => {
           const row = document.createElement('div'); row.className = 'history-item';
           const name = document.createElement('span'); name.className = 'history-name'; name.textContent = job.source_name;
-          const state = document.createElement('span'); state.className = 'history-state'; state.textContent = ({queued:'Antre',running:'Diproses',completed:'Selesai',failed:'Gagal'})[job.status] || job.status;
+          const state = document.createElement('span'); state.className = 'history-state';
+          const providerLabel = ({heuristic:'Rule-based',codex:'Codex AI',openai:'OpenAI AI'})[job.provider] || job.provider || '—';
+          const statusLabel = ({queued:'Antre',running:'Diproses',completed:'Selesai',failed:'Gagal'})[job.status] || job.status;
+          state.textContent = `${providerLabel} · ${statusLabel}`;
           row.append(name,state); panel.append(row);
         });
       } catch (_) { /* keep the rest of the app usable */ }
