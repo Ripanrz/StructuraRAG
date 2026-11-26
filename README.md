@@ -1,6 +1,6 @@
-# E-Hukum RAG Document Tools
+# StructuraRAG
 
-**A Structure-Aware Document Preprocessing and Conversion Pipeline for Retrieval-Augmented Generation (RAG).**
+**A Structure-Aware, Multi-Format Document Preprocessing and Conversion Engine for Retrieval-Augmented Generation (RAG).**
 
 I develop this project to transform document content into structured, labeled, and context-preserving representations for downstream Retrieval-Augmented Generation (RAG) pipelines.
 
