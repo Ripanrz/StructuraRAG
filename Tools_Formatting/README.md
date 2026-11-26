@@ -1,88 +1,146 @@
 # StructuraRAG — PDF Processing Tools
 
-I built this tool around a legal-document reference corpus stored locally in `docx-e-hukum`. Run commands from the StructuraRAG repository root.
+This directory contains the PDF extraction and conversion engine plus the profiler for the legal-document reference corpus. Run commands from the StructuraRAG repository root.
 
-## Observed gold standard
+## Current processing modes
 
-`analyze_gold_standard.py` reads all 20 reference DOCX files (ignoring Microsoft Office `~$` lock files) and writes:
+| Mode | Provider value | Authentication | Purpose |
+|---|---|---|---|
+| Rule-Based | `heuristic` | None | Deterministic extraction, normalization, conservative heading rules, tables, and source markers |
+| AI Lokal | `local` | Local model endpoint, optional bearer token | Uses Ollama or another OpenAI-compatible chat-completions endpoint |
+| AI Cloud API (developer adapter) | `openai` | OpenAI API key | Direct API integration for development; not the planned ChatGPT OAuth product option |
+| Codex CLI (legacy adapter) | `codex` | Local Codex CLI sign-in | Compatibility adapter for the existing local CLI workflow |
+
+The CLI defaults to Rule-Based. The web application exposes Rule-Based, AI Lokal, and a gated AI Cloud OAuth option. ChatGPT OAuth for remote-hosted inference is not enabled until OpenAI approves the hosted use case and the full session/token flow is implemented.
+
+## Gold-standard profiler
+
+`analyze_gold_standard.py` reads the local `docx-e-hukum` reference corpus (ignoring Microsoft Office lock files) and writes:
 
 - `gold_standard_summary.md`: human-readable format specification.
 - `gold_standard_profile.json`: per-document counts, inline tag counts, representative table rows, and paragraph examples.
 
-The corpus contains 33,493 paragraphs. They are all Word `Normal` paragraphs; tables and tags are serialized inline. Observed hierarchy stops at `@h5`; do not generate `@h6+` without new reference evidence. See the summary for exact counts and examples.
+The audited corpus contains 33,493 paragraphs across 20 reference DOCX files. All inspected paragraphs use Word `Normal` style; the table DSL is serialized inline. The observed hierarchy stops at `@h5`; do not generate deeper levels without new reference evidence.
 
 ## Install
 
-```powershell
+~~~powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r Tools_Formatting\requirements.txt
-```
+~~~
 
-## Authentication choices
+## Rule-Based mode (offline, no AI login)
 
-### OpenAI API key
+~~~powershell
+python Tools_Formatting\convert_pdf_batch.py --provider heuristic --limit 1
+~~~
 
-Set an API key in the current PowerShell session. The key is read only by this local script and is sent as a Bearer credential to the configured Responses API endpoint. Never put it in a source file or browser bundle.
+The deterministic baseline preserves page boundaries, text order, tables, image anchors, and explicit hierarchy patterns it can recognize. Current title/heading rules are deliberately conservative:
 
-```powershell
-$env:OPENAI_API_KEY = "your-project-api-key"
+- `@h0`: short uppercase document-title candidate on the first page.
+- `@h1`: explicit `BAB` numbering.
+- `@h2`: explicit uppercase lettered section.
+- `@h3`: explicit numeric heading.
+- `@h4`: explicit lowercase lettered item.
+- `@h5`: explicitly recognized deeper Roman-numbered item.
+
+If a line does not match a reliable pattern, the engine leaves it as a normal paragraph rather than inventing a heading. This baseline is deterministic but is not yet a complete grammar for every legal-document layout. Review results and test against a labeled corpus before production use.
+
+## AI Lokal (Ollama / OpenAI-compatible endpoint)
+
+For a local Ollama server, first install and run a model:
+
+~~~powershell
+ollama pull qwen2.5:7b-instruct
+ollama serve
+~~~
+
+Configure the model endpoint in the current PowerShell session:
+
+~~~powershell
+$env:STRUCTURARAG_LOCAL_AI_BASE_URL = "http://127.0.0.1:11434/v1"
+$env:STRUCTURARAG_LOCAL_AI_MODEL = "qwen2.5:7b-instruct"
+
+python Tools_Formatting\convert_pdf_batch.py --provider local --limit 1
+~~~
+
+If the endpoint requires authentication, configure `STRUCTURARAG_LOCAL_AI_API_KEY`. The provider uses the OpenAI-compatible `/chat/completions` endpoint. Local inference keeps document content on the model host you control; confirm your model server does not forward requests to an external provider.
+
+## AI Cloud API adapter (developer use)
+
+This provider uses the OpenAI Responses API directly. It is separate from ChatGPT OAuth and requires an API credential:
+
+~~~powershell
+$env:OPENAI_API_KEY = "your-api-key"
 $env:OPENAI_MODEL = "gpt-4.1"
-python Tools_Formatting\convert_pdf_batch.py --provider openai --limit 1
 
-# Aktifkan pemahaman visual tabel/layout dengan mengirim render halaman ke Responses API
+python Tools_Formatting\convert_pdf_batch.py --provider openai --limit 1
+~~~
+
+Optional visual page interpretation:
+
+~~~powershell
 python Tools_Formatting\convert_pdf_batch.py --provider openai --vision --limit 1
-```
+~~~
 
-Set `OPENAI_BASE_URL` for a compatible gateway. A short-lived platform bearer credential can be supplied with `OPENAI_BEARER_TOKEN` where your organization issues one.
+Never store API keys in source code, browser bundles, or Git.
 
-### Codex sign-in (OAuth managed by Codex CLI)
+## Codex CLI compatibility adapter
 
-Install the Codex CLI and complete its supported sign-in flow once (`codex --login` / `codex login`, depending on CLI version). Then the converter calls `codex exec` in read-only mode for each small page group; it does not read or copy Codex's private token files.
+The existing Codex CLI adapter is retained for local compatibility:
 
-```powershell
-codex --login
+~~~powershell
+codex login
 python Tools_Formatting\convert_pdf_batch.py --provider codex --limit 1
-```
+~~~
 
-The Codex path requires a locally installed, already authenticated CLI. It is separate from direct Responses API requests. A ChatGPT/Codex login is not a bearer API key for an arbitrary application; use the CLI adapter when the user wants Codex account authentication.
+A Codex sign-in is not a general-purpose API key and does not automatically authorize a remotely hosted application to use a ChatGPT plan. See [Vercel deployment and OAuth boundaries](../docs/VERCEL_DEPLOYMENT.md).
 
-## Run the batch
+## Batch usage
 
-The default input is `pdf-e-hukum` and output is a separate `docx-e-hukum-generated` directory, so source references are never overwritten.
+Default input: `pdf-e-hukum`  
+Default output: `docx-e-hukum-generated`
 
-```powershell
-# Convert a pilot file first; output DOCX, matching TXT, manifest, and batch report
-python Tools_Formatting\convert_pdf_batch.py --provider openai --limit 1
+~~~powershell
+# One-file pilot using the offline baseline
+python Tools_Formatting\convert_pdf_batch.py --provider heuristic --limit 1
 
-# Convert all PDFs
+# Process all PDFs using the local model
+python Tools_Formatting\convert_pdf_batch.py --provider local
+
+# Process all PDFs using the direct OpenAI API adapter
 python Tools_Formatting\convert_pdf_batch.py --provider openai
 
-# Use Codex CLI OAuth instead
-python Tools_Formatting\convert_pdf_batch.py --provider codex
+# If scanned PDFs are present, install Tesseract with ind+eng language packs first
+python Tools_Formatting\convert_pdf_batch.py --provider heuristic --ocr --limit 1
+~~~
 
-# Offline deterministic fallback (no LLM; lower structural accuracy)
-python Tools_Formatting\convert_pdf_batch.py --provider heuristic
-
-# If the source is scanned, install Tesseract with ind+eng language packs first
-python Tools_Formatting\convert_pdf_batch.py --provider openai --ocr --limit 1
-```
-
-For reruns, existing DOCX outputs are skipped unless `--overwrite` is supplied. LLM errors stop conversion by default; `--allow-fallback` explicitly opts into lower-confidence local extraction and marks it accordingly. The LLM path checks page/image/table markers, refuses unsupported `h6+`, requires exactly one `@h0`, and checks source-token retention before creating a DOCX. Use `--pages-per-call N` to tune context/cost. Start with `--limit 1` to review output before processing all source files.
+Existing DOCX outputs are skipped unless `--overwrite` is supplied. LLM errors stop conversion by default; `--allow-fallback` explicitly opts into the low-confidence deterministic baseline. Use `--pages-per-call N` to tune context and cost.
 
 ## Pipeline and fidelity
 
-1. PyMuPDF extracts each page's text blocks, table cells, image bytes, and vertical coordinates. Repeated short margin text, timestamps, and `E-hukum` watermark text are filtered.
-2. Ordered blocks are sent to the chosen model in page groups, with the extracted hierarchy profile and prior heading context. The prompt applies the observed sibling-consistency rule and forbids unsupported `h6+` levels.
-3. The converter verifies all `@PAGE` markers, every image anchor token exactly once, balanced table markers, the maximum observed heading level, one main title, and minimum content retention. Invalid output stops by default; fallback must be explicitly enabled.
-4. Images are embedded in the DOCX in the paragraph position of their `@IMAGE` anchor; source vertical coordinates are retained in that marker and manifest. DOCX image placement is thus anchored in reading order; it cannot promise the same absolute page coordinates after Word reflow.
-5. The output keeps each tag in plain `Normal` paragraphs to match the reference files, with inline table DSL instead of Word table objects.
+1. PyMuPDF extracts page text blocks, coordinates, table cells, embedded images, and substantial vector drawing regions.
+2. Repeated margin furniture and explicitly recognized standalone watermark/metadata blocks are filtered. Substantive paragraphs containing the same words are retained.
+3. Rule-Based labels only explicit patterns. AI providers may reconstruct ambiguous hierarchy using the audited reference rules and previous heading context.
+4. Structural checks validate page markers, image anchors, table-marker balance, heading depth, title count (for AI output), source-token retention, and preservation of numeric tokens.
+5. Images are inserted into DOCX at their image-anchor paragraph. Word reflow means absolute source-page coordinates are not guaranteed after DOCX serialization.
 
-The quality target is faithful structured text for review. `--vision` additionally sends rendered pages to a vision-capable Responses API model and increases image-token usage. `--ocr` uses local Tesseract for pages with little/no embedded text and requires Indonesian and English language packs. Substantial clusters of vector drawings are rasterized as diagram images. The tool does not claim semantic correctness solely because an LLM returned valid tags; inspect conversion warnings and review sample output before a production-wide run.
+These checks reduce common errors but do not prove semantic accuracy. Inspect legal wording, references, tables, numbering, and conversion warnings before ingestion into a trusted knowledge base.
+
+## Output files
+
+The CLI creates:
+
+- `.docx`: structured Word document.
+- `.txt`: DSL representation.
+- `.manifest.json`: source/output metadata and warnings.
+- `batch-report.jsonl`: batch conversion status.
+
+The hosted Vercel endpoint currently returns DOCX directly and does not persist per-job files.
 
 ## Main files
 
-- `analyze_gold_standard.py` — corpus profiler.
-- `convert_pdf_batch.py` — batch conversion with API-key, Codex CLI, and offline providers.
-- `gold_standard_summary.md` — extracted reference contract.
-- `gold_standard_profile.json` — full machine-readable findings.
+- `analyze_gold_standard.py` — reference-corpus profiler.
+- `convert_pdf_batch.py` — PDF-to-DSL/DOCX conversion.
+- `gold_standard_rules.md` — structural reference contract.
