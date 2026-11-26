@@ -27,10 +27,16 @@ from fastapi.staticfiles import StaticFiles
 
 ROOT = Path(__file__).resolve().parents[1]
 CONVERTER = ROOT / "Tools_Formatting" / "convert_pdf_batch.py"
-DATA_ROOT = Path(os.getenv("KMS_WEB_DATA_DIR", str(ROOT / ".webapp-data"))).resolve()
+DATA_ROOT = Path(os.getenv(
+    "STRUCTURARAG_WEB_DATA_DIR",
+    os.getenv("KMS_WEB_DATA_DIR", str(ROOT / ".webapp-data")),
+)).resolve()
 JOBS_DIR = DATA_ROOT / "jobs"
 DB_PATH = DATA_ROOT / "jobs.sqlite3"
-MAX_UPLOAD_BYTES = int(os.getenv("KMS_MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)))
+MAX_UPLOAD_BYTES = int(os.getenv(
+    "STRUCTURARAG_MAX_UPLOAD_BYTES",
+    os.getenv("KMS_MAX_UPLOAD_BYTES", str(50 * 1024 * 1024)),
+))
 
 app = FastAPI(title="StructuraRAG", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=Path(__file__).with_name("static")), name="static")
@@ -164,12 +170,14 @@ def _run_job(job_id: str) -> None:
     command = [
         sys.executable, str(CONVERTER), "--provider", provider,
         "--input-dir", str(source_dir), "--output-dir", str(output_dir),
-        "--limit", "1", "--pages-per-call", os.getenv("KMS_PAGES_PER_CALL", "2"),
+        "--limit", "1", "--pages-per-call", os.getenv(
+            "STRUCTURARAG_PAGES_PER_CALL", os.getenv("KMS_PAGES_PER_CALL", "2")
+        ),
     ]
     codex_model = os.getenv("CODEX_MODEL", "").strip() if provider == "codex" else ""
     if codex_model:
         command.extend(["--model", codex_model])
-    if os.getenv("KMS_ENABLE_OCR", "0") == "1":
+    if os.getenv("STRUCTURARAG_ENABLE_OCR", os.getenv("KMS_ENABLE_OCR", "0")) == "1":
         command.append("--ocr")
     process_env = os.environ.copy()
     if provider == "codex" and not codex_model:
