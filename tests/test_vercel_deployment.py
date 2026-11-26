@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import importlib
 import json
 import os
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from webapp import app as app_module
+app_module = importlib.import_module("webapp.app")
 
 
 ROOT = Path(__file__).resolve().parents[1]
