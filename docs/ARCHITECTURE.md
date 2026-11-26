@@ -34,6 +34,34 @@ Confidence / unresolved-region detection
        Optional embedding / index
 ```
 
+## The three product modes
+
+The product interface exposes three choices, but they have different runtime requirements:
+
+| Mode | Current state | Runtime contract |
+|---|---|---|
+| Rule-Based | Available | Local deterministic rules; no model credential |
+| AI Lokal | Available | Ollama or an OpenAI-compatible endpoint controlled by the operator |
+| AI Cloud | Gated | Intended Sign in with ChatGPT OAuth and eligible ChatGPT plan inference |
+
+### Rule-Based
+
+The baseline should own tasks that are explicit and reproducible: source order, page markers, table delimiters, normalization, known numbering patterns, validation, and serialization. The current implementation recognizes a small set of document-title and heading patterns. It is intentionally conservative and still requires a broader grammar and a labeled benchmark.
+
+### AI Lokal
+
+The current local provider speaks the OpenAI-compatible chat-completions protocol. It can call Ollama or another self-hosted model endpoint. On a local installation, the default is http://127.0.0.1:11434/v1. On Vercel, a model endpoint must be reachable from the hosted Function over HTTPS; a user's laptop loopback address is not reachable from Vercel.
+
+### AI Cloud (OAuth)
+
+The planned cloud mode is Sign in with ChatGPT. OAuth identity sign-in and permission to use a ChatGPT plan for inference are separate grants. Remote-hosted deployments must complete OpenAI's approval process for the hosted use case. The Vercel UI therefore keeps this option disabled until approval, token/session persistence, permission validation, refresh, revocation, and per-user authorization have been implemented and tested.
+
+Do not treat a Codex CLI token or an identity-only OAuth token as a general API key. Never put access or refresh tokens in browser storage, logs, URLs, or source control.
+
+## Deployment model
+
+The local application uses SQLite and an in-process queue for a single-user local workflow. The Vercel application uses a separate stateless conversion route: it processes one small PDF per request in a temporary directory and returns DOCX directly. This route does not promise durable job history, retries, or background processing. Large/batch workloads require private object storage, a durable queue, and an independent worker service.
+
 ## What should be rule-based?
 
 Use deterministic parsers and rules wherever the source contains explicit structure or stable conventions:
