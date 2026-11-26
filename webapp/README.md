@@ -10,8 +10,9 @@ From the repository root in PowerShell:
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r Tools_Formatting\requirements.txt
 python -m pip install -r webapp\requirements.txt
-codex login
-codex login status
+# Optional: authenticate first only if I choose the Codex AI provider
+# codex login
+# codex login status
 .\webapp\start.ps1
 ```
 
