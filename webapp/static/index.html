@@ -155,9 +155,11 @@
     let localAiConfigured = false;
     let cloudOAuthAvailable = false;
     let runtimeMode = 'local';
+    let runtimeReady = false;
     let maxUploadBytes = 50 * 1024 * 1024;
 
     function canSubmit() {
+      if (!runtimeReady) return false;
       if (!selectedFile || !selectedFile.name.toLowerCase().endsWith('.pdf')) return false;
       if (selectedFile.size > maxUploadBytes) return false;
       if (providerSelect.value === 'heuristic') return true;
@@ -283,6 +285,7 @@
         const response = await fetch('/api/health');
         const health = await response.json();
         runtimeMode = health.runtime || 'local';
+        runtimeReady = true;
         maxUploadBytes = Number(health.max_upload_bytes) || maxUploadBytes;
         document.querySelector('#upload-limit').textContent = `PDF saja · maks. ${(maxUploadBytes / (1024 * 1024)).toFixed(0)} MB · satu dokumen per proses`;
         localAiConfigured = Boolean(health.providers.local?.configured);
@@ -300,7 +303,9 @@
           copy.textContent += ' PERINGATAN: akses belum dilindungi password; atur STRUCTURARAG_ACCESS_PASSWORD sebelum membagikan URL.';
         }
         updateProviderState();
+        refreshHistory();
       } catch (_) {
+        runtimeReady = false;
         copy.textContent = 'Server aplikasi tidak merespons.';
         badge.textContent = 'Offline';
         badge.className = 'badge error';
@@ -334,7 +339,7 @@
       } catch (_) { /* keep the rest of the app usable */ }
     }
     updateProviderState();
-    refreshHealth(); refreshHistory();
+    refreshHealth();
   </script>
 </body>
 </html>
