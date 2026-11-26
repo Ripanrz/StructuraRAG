@@ -3,6 +3,7 @@
   <h1>StructuraRAG</h1>
   <p><strong>Structure-aware document preprocessing for Retrieval-Augmented Generation.</strong></p>
   <p>Deterministic parsing first. AI assistance when needed.</p>
+  <p><a href="https://github.com/Ripanrz/StructuraRAG/actions/workflows/tests.yml"><img src="https://github.com/Ripanrz/StructuraRAG/actions/workflows/tests.yml/badge.svg" alt="Regression tests"></a></p>
 </div>
 
 ---
