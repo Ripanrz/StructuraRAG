@@ -2,7 +2,7 @@
 
 **A Structure-Aware, Multi-Format Document Preprocessing and Conversion Engine for Retrieval-Augmented Generation (RAG).**
 
-I develop this project to transform document content into structured, labeled, and context-preserving representations for downstream Retrieval-Augmented Generation (RAG) pipelines.
+I develop StructuraRAG as a format-aware document preprocessing engine that converts source files into structurally labeled, context-preserving representations for downstream Retrieval-Augmented Generation (RAG) pipelines. Its design separates deterministic parsing and validation from optional AI-assisted interpretation.
 
 My primary focus is not merely extracting text, but preserving logical hierarchy, reading order, tables, page boundaries, images, and contextual relationships during preprocessing.
 
@@ -98,7 +98,7 @@ I use an inline DSL to represent document structure.
 | `@TABLE_END` | Table ending |
 | `@IMAGE` | Image location and reference |
 
-The hierarchy is derived from the audited E-Hukum reference corpus. The current profile supports heading levels through `@h5`; I do not generate deeper levels without supporting structural evidence.
+The currently implemented legal-document hierarchy is derived from a reference corpus originally assembled for the E-Hukum workflow. The current profile supports heading levels through `@h5`; I do not generate deeper levels without supporting structural evidence.
 
 Example:
 
@@ -134,8 +134,8 @@ The heuristic provider is intended for extraction diagnostics, not as an equival
 I use Python and PowerShell for the current local workflow.
 
 ```powershell
-git clone https://github.com/Ripanrz/e-hukum-rag-converter.git
-cd e-hukum-rag-converter
+git clone https://github.com/Ripanrz/StructuraRAG.git
+cd StructuraRAG
 
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -195,7 +195,7 @@ python Tools_Formatting\convert_pdf_batch.py --provider openai --vision --limit 
 python Tools_Formatting\convert_pdf_batch.py --provider openai
 ```
 
-By default, the converter uses `pdf-e-hukum` as its input directory and `docx-e-hukum-generated` as its output directory. Existing DOCX files are skipped unless I explicitly supply `--overwrite`.
+By default, the converter uses `pdf-e-hukum` as its default input directory and `docx-e-hukum-generated` as its default output directory. These legacy directory names remain configurable through `--input-dir` and `--output-dir`. Existing DOCX files are skipped unless I explicitly supply `--overwrite`.
 
 ## Run the Local Web Application
 
@@ -213,7 +213,7 @@ The web application provides local PDF uploading, background conversion jobs, st
 ## Project Structure
 
 ```text
-e-hukum-rag-converter/
+StructuraRAG/
 ├── Tools_Formatting/
 │   ├── analyze_gold_standard.py
 │   ├── convert_pdf_batch.py
