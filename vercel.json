@@ -1,22 +1,11 @@
+
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "index.py": {
       "maxDuration": 300,
-      "includeFiles": [
-        "Tools_Formatting/**",
-        "webapp/static/**"
-      ],
-      "excludeFiles": [
-        "docs/**",
-        "tests/**",
-        ".github/**",
-        ".env*",
-        "pdf-e-hukum/**",
-        "docx-e-hukum/**",
-        "docx-e-hukum-generated/**",
-        ".webapp-data/**"
-      ]
+      "includeFiles": "{Tools_Formatting/**,webapp/static/**}",
+      "excludeFiles": "{docs/**,tests/**,.github/**,.env*,pdf-e-hukum/**,docx-e-hukum/**,docx-e-hukum-generated/**,.webapp-data/**}"
     }
   }
 }
