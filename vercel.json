@@ -6,6 +6,16 @@
       "includeFiles": [
         "Tools_Formatting/**",
         "webapp/static/**"
+      ],
+      "excludeFiles": [
+        "docs/**",
+        "tests/**",
+        ".github/**",
+        ".env*",
+        "pdf-e-hukum/**",
+        "docx-e-hukum/**",
+        "docx-e-hukum-generated/**",
+        ".webapp-data/**"
       ]
     }
   }
