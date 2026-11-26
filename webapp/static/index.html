@@ -174,7 +174,7 @@
         ? 'Mode Rule-Based berjalan offline tanpa akun AI, OAuth, atau API key. Struktur dikenali dengan aturan deterministik; tinjau hasil yang ambigu.'
         : provider === 'local'
           ? (localAiConfigured
-            ? 'Endpoint AI Lokal sudah dikonfigurasi. Model memproses struktur ambigu; kredensial hanya disimpan pada server.'
+            ? 'URL endpoint AI Lokal sudah dikonfigurasi. Ketersediaan model akan diuji saat konversi; kredensial hanya disimpan pada server.'
             : 'AI Lokal belum dikonfigurasi. Gunakan Ollama atau endpoint OpenAI-compatible dan atur STRUCTURARAG_LOCAL_AI_BASE_URL.')
           : (cloudOAuthAvailable
             ? 'ChatGPT OAuth tersedia untuk akun yang memenuhi syarat.'
@@ -292,8 +292,8 @@
         cloudOAuthAvailable = Boolean(health.providers.cloud_oauth?.available);
         const aiReady = localAiConfigured || cloudOAuthAvailable;
         copy.textContent = runtimeMode === 'vercel'
-          ? `Deployment Vercel aktif. AI Lokal: ${localAiConfigured ? 'terkonfigurasi.' : 'belum terhubung.'} ChatGPT OAuth: ${cloudOAuthAvailable ? 'siap.' : 'menunggu approval.'} Rule-Based: aktif.`
-          : `AI Lokal: ${localAiConfigured ? 'endpoint tersedia.' : 'belum dikonfigurasi.'} ChatGPT OAuth: ${cloudOAuthAvailable ? 'siap.' : 'belum tersedia.'} Rule-Based: aktif offline.`;
+          ? `Deployment Vercel aktif. AI Lokal: ${localAiConfigured ? 'URL terkonfigurasi.' : 'belum terhubung.'} ChatGPT OAuth: ${cloudOAuthAvailable ? 'siap.' : 'menunggu approval.'} Rule-Based: aktif.`
+          : `AI Lokal: ${localAiConfigured ? 'URL terkonfigurasi.' : 'belum dikonfigurasi.'} ChatGPT OAuth: ${cloudOAuthAvailable ? 'siap.' : 'belum tersedia.'} Rule-Based: aktif offline.`;
         badge.textContent = aiReady ? 'AI lokal siap' : 'Rule-Based siap';
         badge.className = `badge ${aiReady ? 'ok' : ''}`;
         dot.className = `dot ${aiReady ? 'ok' : ''}`;
