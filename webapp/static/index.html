@@ -113,7 +113,7 @@
             <p class="mode-help" id="provider-help">Mode offline memakai aturan deterministik sebagai baseline. Cocok untuk pemrosesan awal, tetapi struktur hasil tetap perlu diperiksa.</p>
           </div>
           <label class="drop" id="drop" for="pdf-file">
-            <div><div class="drop-icon">↑</div><strong>Pilih PDF atau tarik file ke sini</strong><span>PDF saja · maks. 50 MB · satu dokumen per proses</span><span class="file-name" id="file-name"></span></div>
+            <div><div class="drop-icon">↑</div><strong>Pilih PDF atau tarik file ke sini</strong><span id="upload-limit">PDF saja · maks. 50 MB · satu dokumen per proses</span><span class="file-name" id="file-name"></span></div>
           </label>
           <input class="hidden" id="pdf-file" type="file" accept="application/pdf,.pdf">
           <div class="actions"><span class="format-note">DOCX, DSL TXT, dan laporan dibuat per job.</span><button class="primary" id="submit" disabled>Mulai konversi <span aria-hidden="true">→</span></button></div>
@@ -242,6 +242,7 @@
         const response = await fetch('/api/health'); const health = await response.json();
         const codex = health.providers.codex;
         maxUploadBytes = Number(health.max_upload_bytes) || maxUploadBytes;
+        document.querySelector('#upload-limit').textContent = `PDF saja · maks. ${(maxUploadBytes / (1024 * 1024)).toFixed(0)} MB · satu dokumen per proses`;
         openaiConfigured = Boolean(health.providers.openai.configured);
         codexAuthenticated = Boolean(codex.authenticated);
         const aiReady = codexAuthenticated || openaiConfigured;
