@@ -10,3 +10,7 @@ docx-e-hukum/
 .webapp-data/
 Tools_Formatting/gold_standard_profile.json
 Tools_Formatting/gold_standard_summary.md
+.vercel/
+.env
+.env.*
+!.env.example
