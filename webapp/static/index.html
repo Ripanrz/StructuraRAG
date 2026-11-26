@@ -106,9 +106,9 @@
           <div class="mode-field">
             <label class="mode-label" for="provider">Processing mode</label>
             <select class="mode-select" id="provider">
-              <option value="heuristic">Rule-based · Offline (no AI login)</option>
-              <option value="codex">AI-assisted · Codex CLI</option>
-              <option value="openai">AI-assisted · OpenAI API</option>
+              <option value="heuristic">Rule-Based · Offline</option>
+              <option value="local">AI Lokal · Ollama / OpenAI-compatible</option>
+              <option value="cloud_oauth" disabled>AI Cloud · ChatGPT OAuth (menunggu approval)</option>
             </select>
             <p class="mode-help" id="provider-help">Mode offline memakai aturan deterministik sebagai baseline. Cocok untuk pemrosesan awal, tetapi struktur hasil tetap perlu diperiksa.</p>
           </div>
@@ -124,15 +124,15 @@
         <section class="card status-card">
           <div class="status-top"><div class="status-heading"><span class="dot" id="codex-dot"></span>Status AI provider</div><span class="badge" id="codex-badge">Memeriksa</span></div>
           <p class="status-copy" id="codex-copy">Memeriksa konfigurasi provider AI…</p>
-          <div class="commands" id="login-commands">Codex: codex login<br>OpenAI: set OPENAI_API_KEY</div>
+          <div class="commands" id="login-commands">AI Lokal: jalankan Ollama<br>Cloud OAuth: menunggu approval OpenAI</div>
           <button class="text-button" id="refresh-health">Periksa ulang koneksi</button>
         </section>
         <section class="card rules">
           <h2>Yang perlu diketahui</h2>
           <div class="rule"><span class="rule-icon">01</span><span><b>Mulai dari satu PDF.</b> Tinjau hasil sebelum memproses dokumen lain.</span></div>
-          <div class="rule"><span class="rule-icon">02</span><span><b>AI bersifat opsional.</b> Gunakan Codex atau OpenAI hanya untuk struktur yang ambigu.</span></div>
-          <div class="rule"><span class="rule-icon">03</span><span><b>Scanned PDF.</b> OCR perlu Tesseract dan bahasa Indonesian/English disiapkan di mesin.</span></div>
-          <div class="rule"><span class="rule-icon">04</span><span><b>Jangan expose server lokal.</b> Aplikasi ini belum punya multi-user auth.</span></div>
+          <div class="rule"><span class="rule-icon">02</span><span><b>AI tetap opsional.</b> Pilih AI Lokal untuk interpretasi struktur yang ambigu.</span></div>
+          <div class="rule"><span class="rule-icon">03</span><span><b>AI Lokal.</b> Siapkan Ollama dan model instruksi di komputer/server Anda.</span></div>
+          <div class="rule"><span class="rule-icon">04</span><span><b>Vercel.</b> Upload kecil diproses sinkron; dokumen tidak disimpan di server.</span></div>
         </section>
       </aside>
     </div>
@@ -152,23 +152,24 @@
     const jobPanel = document.querySelector('#current-job');
     let selectedFile = null;
     let pollTimer = null;
-    let codexAuthenticated = false;
-    let openaiConfigured = false;
+    let localAiConfigured = false;
+    let cloudOAuthAvailable = false;
+    let runtimeMode = 'local';
     let maxUploadBytes = 50 * 1024 * 1024;
 
     function canSubmit() {
       if (!selectedFile || !selectedFile.name.toLowerCase().endsWith('.pdf')) return false;
       if (selectedFile.size > maxUploadBytes) return false;
       if (providerSelect.value === 'heuristic') return true;
-      if (providerSelect.value === 'codex') return codexAuthenticated;
-      if (providerSelect.value === 'openai') return openaiConfigured;
+      if (providerSelect.value === 'local') return localAiConfigured;
+      if (providerSelect.value === 'cloud_oauth') return cloudOAuthAvailable;
       return false;
     }
 
     function updateProviderState() {
       const provider = providerSelect.value;
       providerHelp.textContent = provider === 'heuristic'
-        ? 'Mode offline memakai aturan deterministik sebagai baseline. Gratis dan tidak membutuhkan login AI; hasil heuristik tetap perlu ditinjau.'
+        ? 'Rule-Based berjalan offline tanpa login AI. AI Lokal memakai Ollama atau endpoint OpenAI-compatible milik saya.'
         : provider === 'codex'
           ? (codexAuthenticated ? 'Codex CLI terautentikasi pada mesin ini. Konten halaman dikirim untuk rekonstruksi struktur berbantuan AI.' : 'Jalankan codex login pada terminal mesin ini sebelum memilih mode ini.')
           : (openaiConfigured ? 'Kredensial OpenAI terpasang pada environment server lokal. Jangan memasukkan API key ke browser.' : 'Set OPENAI_API_KEY atau OPENAI_BEARER_TOKEN pada environment sebelum memakai mode ini.');
@@ -218,39 +219,79 @@
       catch (_) { /* transient polling error; retry */ }
     }
     submit.addEventListener('click', async () => {
-      if (!selectedFile) return;
-      submit.disabled = true; submit.textContent = 'Mengunggah…';
-      jobPanel.classList.remove('hidden'); jobPanel.textContent = 'Mengunggah PDF ke proses lokal…';
-      const form = new FormData(); form.append('file', selectedFile); form.append('provider', providerSelect.value);
+      if (!canSubmit()) return;
+      submit.disabled = true; submit.textContent = 'Memproses…';
+      jobPanel.classList.remove('hidden'); jobPanel.replaceChildren();
+      const progress = document.createElement('div');
+      progress.className = 'message-text';
+      progress.textContent = runtimeMode === 'vercel'
+        ? 'PDF diproses oleh Vercel Function. Hasil akan dikirim langsung dan tidak disimpan di server.'
+        : 'PDF masuk antrean pemrosesan lokal…';
+      jobPanel.append(progress);
+      const form = new FormData();
+      form.append('file', selectedFile);
+      form.append('provider', providerSelect.value);
       try {
-        const response = await fetch('/api/jobs', { method:'POST', headers:{'X-KMS-Request':'1'}, body:form });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.detail || 'Upload gagal.');
-        showJob(result);
-        if (['queued','running'].includes(result.status)) {
-          pollTimer = setInterval(() => pollJob(result.id), 2500);
+        if (runtimeMode === 'vercel') {
+          const response = await fetch('/api/convert', { method:'POST', body:form });
+          if (!response.ok) {
+            let detail = 'Konversi gagal.';
+            try { detail = (await response.json()).detail || detail; } catch (_) {}
+            throw new Error(detail);
+          }
+          const blob = await response.blob();
+          const downloadUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.className = 'download';
+          link.href = downloadUrl;
+          link.download = selectedFile.name.replace(/\.pdf$/i, '') + '.docx';
+          link.textContent = 'Unduh hasil DOCX ↓';
+          const message = document.createElement('div');
+          message.className = 'message-title';
+          message.textContent = 'Konversi selesai.';
+          jobPanel.replaceChildren(message, link);
+          if (Number(response.headers.get('X-StructuraRAG-Warnings') || 0) > 0) {
+            const note = document.createElement('div');
+            note.className = 'message-text';
+            note.textContent = 'Konverter menghasilkan peringatan. Periksa dokumen sebelum digunakan sebagai sumber RAG.';
+            jobPanel.append(note);
+          }
+        } else {
+          const response = await fetch('/api/jobs', { method:'POST', headers:{'X-KMS-Request':'1'}, body:form });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.detail || 'Upload gagal.');
+          showJob(result);
+          if (['queued','running'].includes(result.status)) {
+            pollTimer = setInterval(() => pollJob(result.id), 2500);
+          }
         }
       } catch (error) {
         jobPanel.textContent = error.message || 'Terjadi kesalahan.';
-        submit.disabled = !canSubmit();
-      } finally { submit.innerHTML = 'Mulai konversi <span aria-hidden="true">→</span>'; }
+      } finally {
+        submit.innerHTML = 'Mulai konversi <span aria-hidden="true">→</span>';
+        updateProviderState();
+      }
     });
 
     async function refreshHealth() {
       const copy = document.querySelector('#codex-copy'); const badge = document.querySelector('#codex-badge'); const dot = document.querySelector('#codex-dot');
       try {
-        const response = await fetch('/api/health'); const health = await response.json();
-        const codex = health.providers.codex;
+        const response = await fetch('/api/health');
+        const health = await response.json();
+        runtimeMode = health.runtime || 'local';
         maxUploadBytes = Number(health.max_upload_bytes) || maxUploadBytes;
         document.querySelector('#upload-limit').textContent = `PDF saja · maks. ${(maxUploadBytes / (1024 * 1024)).toFixed(0)} MB · satu dokumen per proses`;
-        openaiConfigured = Boolean(health.providers.openai.configured);
-        codexAuthenticated = Boolean(codex.authenticated);
-        const aiReady = codexAuthenticated || openaiConfigured;
-        copy.textContent = `Codex: ${codex.message} OpenAI: ${openaiConfigured ? 'credential tersedia.' : 'belum dikonfigurasi.'} Rule-based: selalu tersedia offline.`;
-        badge.textContent = aiReady ? 'AI siap' : 'AI opsional';
+        localAiConfigured = Boolean(health.providers.local?.configured);
+        cloudOAuthAvailable = Boolean(health.providers.cloud_oauth?.available);
+        const aiReady = localAiConfigured || cloudOAuthAvailable;
+        copy.textContent = runtimeMode === 'vercel'
+          ? `Deployment Vercel aktif. AI Lokal: ${localAiConfigured ? 'terkonfigurasi.' : 'belum terhubung.'} ChatGPT OAuth: ${cloudOAuthAvailable ? 'siap.' : 'menunggu approval.'} Rule-Based: aktif.`
+          : `AI Lokal: ${localAiConfigured ? 'endpoint tersedia.' : 'belum dikonfigurasi.'} ChatGPT OAuth: ${cloudOAuthAvailable ? 'siap.' : 'belum tersedia.'} Rule-Based: aktif offline.`;
+        badge.textContent = aiReady ? 'AI lokal siap' : 'Rule-Based siap';
         badge.className = `badge ${aiReady ? 'ok' : ''}`;
         dot.className = `dot ${aiReady ? 'ok' : ''}`;
-        document.querySelector('#login-commands').classList.toggle('hidden', aiReady);
+        document.querySelector('#login-commands').textContent = 'Rule-Based: tanpa login\nAI Lokal: Ollama /v1\nAI Cloud: perlu approval OAuth';
+        document.querySelector('#login-commands').classList.toggle('hidden', aiReady && !cloudOAuthAvailable);
         updateProviderState();
       } catch (_) {
         copy.textContent = 'Server aplikasi tidak merespons.';
@@ -263,6 +304,14 @@
 
     async function refreshHistory() {
       const panel = document.querySelector('#history');
+      if (runtimeMode === 'vercel') {
+        panel.replaceChildren();
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        empty.textContent = 'Vercel stateless mode: hasil dikirim langsung ke browser dan tidak disimpan di server.';
+        panel.append(empty);
+        return;
+      }
       try {
         const response = await fetch('/api/jobs'); const jobs = await response.json(); panel.replaceChildren();
         if (!jobs.length) { panel.innerHTML = '<div class="empty">Belum ada dokumen diproses.</div>'; return; }
@@ -270,7 +319,7 @@
           const row = document.createElement('div'); row.className = 'history-item';
           const name = document.createElement('span'); name.className = 'history-name'; name.textContent = job.source_name;
           const state = document.createElement('span'); state.className = 'history-state';
-          const providerLabel = ({heuristic:'Rule-based',codex:'Codex AI',openai:'OpenAI AI'})[job.provider] || job.provider || '—';
+          const providerLabel = ({heuristic:'Rule-Based',local:'AI Lokal',codex:'Codex AI',openai:'OpenAI API'})[job.provider] || job.provider || '—';
           const statusLabel = ({queued:'Antre',running:'Diproses',completed:'Selesai',failed:'Gagal'})[job.status] || job.status;
           state.textContent = `${providerLabel} · ${statusLabel}`;
           row.append(name,state); panel.append(row);
