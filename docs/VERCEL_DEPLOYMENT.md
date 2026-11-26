@@ -43,7 +43,7 @@ Recommended minimum:
 |---|---|---|
 | STRUCTURARAG_ACCESS_PASSWORD | A long unique password | Strongly recommended before public use |
 | STRUCTURARAG_ACCESS_USERNAME | structurarag or your own username | Optional |
-| STRUCTURARAG_ALLOWED_HOSTS | Comma-separated custom domains, if any | Only for custom domains |
+| STRUCTURARAG_ALLOWED_HOSTS | Comma-separated additional domains, if any | Only for extra aliases not exposed by Vercel system variables |
 | STRUCTURARAG_VERCEL_MAX_UPLOAD_BYTES | 4194304 | Default is 4 MiB |
 | STRUCTURARAG_VERCEL_CONVERT_TIMEOUT | 240 | Default is 240 seconds |
 | STRUCTURARAG_PAGES_PER_CALL | 1 | Default is 1 |
@@ -51,6 +51,8 @@ Recommended minimum:
 The default Vercel function accepts small PDFs and processes them synchronously. The Function response is returned directly to the browser as DOCX; uploaded and generated documents are not persisted by this route.
 
 **Important:** do not expose the app publicly without setting STRUCTURARAG_ACCESS_PASSWORD or enabling Vercel Deployment Protection. The optional Basic Auth middleware protects the page and API routes. Keep this password in Vercel Environment Variables, never in source code.
+
+The host guard automatically permits Vercel's `VERCEL_URL`, `VERCEL_BRANCH_URL`, and `VERCEL_PROJECT_PRODUCTION_URL` system domains. Add only any additional custom alias to `STRUCTURARAG_ALLOWED_HOSTS`; these system variables are populated when **Automatically expose System Environment Variables** is enabled for the project.
 
 ## 3. Verify the deployment
 
