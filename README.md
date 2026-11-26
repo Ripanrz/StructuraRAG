@@ -1,12 +1,17 @@
-# StructuraRAG
+<div align="center">
+  <img src="webapp/static/logo.svg" alt="StructuraRAG logo" width="112">
+  <h1>StructuraRAG</h1>
+  <p><strong>Structure-aware document preprocessing for Retrieval-Augmented Generation.</strong></p>
+  <p>Deterministic parsing first. AI assistance when needed.</p>
+</div>
 
-**A Structure-Aware, Multi-Format Document Preprocessing and Conversion Engine for Retrieval-Augmented Generation (RAG).**
+---
 
 I develop StructuraRAG as a format-aware document preprocessing engine that converts source files into structurally labeled, context-preserving representations for downstream Retrieval-Augmented Generation (RAG) pipelines. Its design separates deterministic parsing and validation from optional AI-assisted interpretation.
 
 My primary focus is not merely extracting text, but preserving logical hierarchy, reading order, tables, page boundaries, images, and contextual relationships during preprocessing.
 
-The current implementation focuses on legal PDF processing, supported by a gold-standard DOCX profiling tool and a local web interface. I designed the project with future multi-format ingestion and structure-aware chunking in mind.
+The current implementation is PDF-first and includes a legal-document reference profiler, a CLI converter, and a local web interface. The architecture is intended to grow into multi-format ingestion and independent structure-aware chunking.
 
 > **Current scope:** PDF is the implemented source-document conversion format. DOCX is used as a reference and profiling format. General DOCX, TXT, HTML, XLSX, and PPTX input conversion is not yet implemented.
 
@@ -29,7 +34,7 @@ I aim to build a document preprocessing system that can:
 | PDF extraction | Text, layout blocks, tables, and embedded images |
 | Scanned PDF | Optional OCR using Tesseract |
 | Visual interpretation | Optional page-image processing through the OpenAI provider |
-| Structural labeling | LLM-assisted document hierarchy reconstruction |
+| Structural labeling | Rule-based fallback plus optional LLM-assisted reconstruction |
 | Table preservation | Inline table DSL |
 | Image preservation | Image anchors and embedded DOCX images |
 | CLI output | DOCX, TXT/DSL, JSON manifest, JSONL batch report |
@@ -127,7 +132,15 @@ This is an illustrative DSL example, not a claim that every converted document h
 | `codex` | Uses an authenticated local Codex CLI session |
 | `heuristic` | Uses deterministic local rules as a lower-confidence fallback |
 
-The heuristic provider is intended for extraction diagnostics, not as an equivalent replacement for LLM-assisted structural reconstruction.
+The current heuristic provider is a limited deterministic baseline (including source-order preservation and a basic BAB rule), not a complete semantic hierarchy engine. It runs without AI credentials. The AI providers are optional and can help resolve ambiguous structures.
+
+## Rule-based or AI: which should I use?
+
+I do not consider an LLM mandatory for document preprocessing. I use deterministic parsers and rules for format extraction, normalization, explicit headings, numbering patterns, page provenance, table boundaries, validation, and chunk serialization. These operations should remain repeatable and testable.
+
+I reserve AI for ambiguous headings, irregular layouts, uncertain reading order, and difficult scanned tables or diagrams. AI suggestions must pass deterministic validation and remain traceable to the original source. I do not recommend training a custom model yet; first establish a labeled evaluation set and measure where rules fail.
+
+The current `heuristic` mode is intentionally a baseline, not a complete rule engine. See [the architecture note](docs/ARCHITECTURE.md) for the target hybrid design and evaluation criteria.
 
 ## Installation
 
@@ -208,7 +221,7 @@ codex login
 
 I then open http://127.0.0.1:8000.
 
-The web application provides local PDF uploading, background conversion jobs, status tracking, warning notifications, DOCX download, and recent job history. It currently uses the local Codex CLI session and accepts PDF input only.
+The web application provides local PDF uploading, background conversion jobs, status tracking, warning notifications, DOCX download, and recent job history. It accepts PDF input only and lets me choose a rule-based offline baseline, Codex CLI, or OpenAI API. AI credentials are optional unless an AI provider is selected.
 
 ## Project Structure
 
@@ -220,13 +233,16 @@ StructuraRAG/
 │   ├── gold_standard_rules.md
 │   ├── requirements.txt
 │   └── README.md
+├── docs/
+│   └── ARCHITECTURE.md
 ├── webapp/
 │   ├── app.py
 │   ├── start.ps1
 │   ├── requirements.txt
 │   ├── README.md
 │   └── static/
-│       └── index.html
+│       ├── index.html
+│       └── logo.svg
 ├── .gitignore
 └── README.md
 ```
@@ -237,7 +253,7 @@ I use structural checks to reduce the risk of content loss and malformed output.
 
 These checks do not establish complete semantic accuracy. LLM-generated heading classifications, legal terminology, numerical references, tables, and reading order still require human review.
 
-The current version does not provide a complete independent semantic chunking engine, embedding generation, vector-database integration, or production-grade multi-user deployment. Page groups sent to a model are processing batches, not final RAG chunks.
+The current version does not provide a complete independent semantic chunking engine, embedding generation, vector-database integration, or production-grade multi-user deployment. The current heuristic mode is a limited offline baseline, not a mature general-purpose rule engine. Page groups sent to a model are processing batches, not final RAG chunks.
 
 ## Roadmap
 
