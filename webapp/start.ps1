@@ -11,7 +11,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Web dependencies are missing. Run: .\.venv\Scripts\python.exe -m pip install -r webapp\requirements.txt"
 }
 
-Write-Host 'Starting E-Hukum RAG Converter on http://127.0.0.1:8000'
+Write-Host 'Starting StructuraRAG on http://127.0.0.1:8000'
 Write-Host 'Keep this window open. Stop the app with Ctrl+C.'
 Push-Location $projectRoot
 try {
