@@ -1,16 +1,35 @@
 <div align="center">
   <img src="webapp/static/logo.svg" alt="StructuraRAG logo" width="112">
   <h1>StructuraRAG</h1>
-  <p><strong>Structure-aware document preprocessing for Retrieval-Augmented Generation.</strong></p>
+  <p><strong>Structure-aware PDF preprocessing for Retrieval-Augmented Generation.</strong></p>
   <p>Deterministic parsing first. AI assistance when needed.</p>
-  <p><a href="https://github.com/Ripanrz/StructuraRAG/actions/workflows/tests.yml"><img src="https://github.com/Ripanrz/StructuraRAG/actions/workflows/tests.yml/badge.svg" alt="Regression tests"></a></p>
+  <p>
+    <a href="https://structurarag.vercel.app">
+      <img src="https://img.shields.io/badge/Live%20App-Open%20StructuraRAG-111827?style=for-the-badge&logo=vercel&logoColor=white" alt="Open StructuraRAG on Vercel">
+    </a>
+    <a href="https://github.com/Ripanrz/StructuraRAG/actions/workflows/tests.yml">
+      <img src="https://github.com/Ripanrz/StructuraRAG/actions/workflows/tests.yml/badge.svg" alt="GitHub Actions tests">
+    </a>
+  </p>
+  <p>
+    <img src="https://img.shields.io/badge/Project-StructuraRAG-111827?style=flat-square" alt="Project StructuraRAG">
+    <img src="https://img.shields.io/badge/Pipeline-PDF--First-2563EB?style=flat-square" alt="PDF-first pipeline">
+    <img src="https://img.shields.io/badge/Runtime-Python_3.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.12">
+    <img src="https://img.shields.io/badge/API-FastAPI-009688?style=flat-square" alt="FastAPI">
+    <img src="https://img.shields.io/badge/PDF_Engine-PyMuPDF-E34F26?style=flat-square" alt="PyMuPDF">
+    <img src="https://img.shields.io/badge/Deployment-Vercel-000000?style=flat-square&logo=vercel&logoColor=white" alt="Vercel">
+    <img src="https://img.shields.io/badge/Output-DOCX_%2B_DSL_TXT-1D4ED8?style=flat-square" alt="DOCX and DSL TXT output">
+    <img src="https://img.shields.io/badge/AI_Cloud-OAuth_gated-F59E0B?style=flat-square" alt="AI Cloud OAuth gated">
+  </p>
 </div>
 
 ---
 
-I develop StructuraRAG as a format-aware document preprocessing engine that converts source files into structurally labeled, context-preserving representations for downstream Retrieval-Augmented Generation (RAG) pipelines. Its design separates deterministic parsing and validation from optional AI-assisted interpretation.
+## About
 
-My primary focus is not merely extracting text, but preserving logical hierarchy, reading order, tables, page boundaries, images, and contextual relationships during preprocessing.
+StructuraRAG is a PDF-first document preprocessing tool for downstream Retrieval-Augmented Generation (RAG) pipelines. It extracts text, tables, and visual elements; preserves page order and image anchors; and produces a structured DOCX/DSL representation for review. Its design separates deterministic parsing and validation from optional AI-assisted interpretation.
+
+The current implementation focuses on preserving logical hierarchy, reading order, tables, page boundaries, images, and contextual relationships during preprocessing.
 
 The current implementation is PDF-first and includes a legal-document reference profiler, a CLI converter, and a local web interface. The architecture is intended to grow into multi-format ingestion and independent structure-aware chunking.
 
@@ -181,8 +200,10 @@ The repository includes a root FastAPI entrypoint and Vercel configuration. Rule
 1. Import Ripanrz/StructuraRAG in Vercel.
 2. Keep the Root Directory at the repository root.
 3. Let Vercel detect the Python/FastAPI runtime and deploy.
-4. Set STRUCTURARAG_ACCESS_PASSWORD before sharing the URL.
-5. Open /api/health and test a small PDF using Rule-Based.
+4. Optionally set `STRUCTURARAG_ACCESS_PASSWORD` to enable application-level HTTP Basic Authentication.
+5. Open `/api/health` and test a small PDF using Rule-Based.
+
+If `STRUCTURARAG_ACCESS_PASSWORD` is omitted, application-level Basic Authentication is disabled and the production URL is publicly reachable unless a separate Vercel access-control policy protects it. Anyone who can reach the endpoint may submit a PDF, so keep the 4 MiB limit and avoid processing confidential documents on an unprotected public deployment.
 
 The hosted route processes synchronously, accepts 4 MiB by default, returns DOCX directly, and does not persist uploaded documents or job history. Large PDFs need an external worker/storage design.
 
@@ -190,7 +211,7 @@ See [the full Vercel deployment guide](docs/VERCEL_DEPLOYMENT.md) for environmen
 
 ## Privacy and Deployment
 
-The local application is single-user and binds to loopback. The Vercel application is stateless for conversion requests. Set password protection or Vercel Deployment Protection before sharing the hosted URL. Keep API keys and model endpoint credentials in server-side environment variables.
+The local application is single-user and binds to loopback. The Vercel application is stateless for conversion requests: input and output files are handled in a temporary directory and are not retained as job history. Application-level Basic Authentication is optional; without it, the production endpoint is public unless protected by a separate access-control policy. Keep API keys and model endpoint credentials in server-side environment variables.
 
 The AI Cloud option uses the intended Sign in with ChatGPT OAuth path. It remains disabled for remote Vercel hosting until OpenAI approves remote-hosted ChatGPT plan inference and the complete secure token/session implementation is delivered. OAuth identity sign-in alone does not grant plan-based inference.
 
