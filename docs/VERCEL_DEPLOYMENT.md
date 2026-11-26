@@ -37,6 +37,8 @@ The project includes:
 
 Open **Vercel → Project → Settings → Environment Variables**.
 
+Before deploying, enable **Automatically expose System Environment Variables** in the project's environment-variable settings. The application relies on Vercel's `VERCEL=1` flag to activate its serverless routes and on the `VERCEL_URL` / `VERCEL_PROJECT_PRODUCTION_URL` values to validate the request host. If these system variables are not exposed, the app can incorrectly start in local-only mode and return 403/404 responses.
+
 Recommended minimum:
 
 | Variable | Value | Required |
