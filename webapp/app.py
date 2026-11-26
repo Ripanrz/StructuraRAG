@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -75,11 +75,15 @@ def _init_db() -> None:
                 status TEXT NOT NULL,
                 message TEXT NOT NULL,
                 output_name TEXT,
+                provider TEXT NOT NULL DEFAULT 'codex',
                 warnings_json TEXT NOT NULL DEFAULT '[]',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )"""
         )
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(jobs)").fetchall()}
+        if "provider" not in columns:
+            connection.execute("ALTER TABLE jobs ADD COLUMN provider TEXT NOT NULL DEFAULT 'codex'")
         connection.execute(
             "UPDATE jobs SET status='failed', message='Server restarted while this job was running.', updated_at=? WHERE status='running'",
             (_now(),),
@@ -109,6 +113,7 @@ def _job_dict(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "id": row["id"], "source_name": row["source_name"], "status": row["status"],
         "message": row["message"], "output_name": row["output_name"],
+        "provider": row["provider"],
         "warnings": json.loads(row["warnings_json"]),
         "created_at": row["created_at"], "updated_at": row["updated_at"],
     }
@@ -149,23 +154,25 @@ def _run_job(job_id: str) -> None:
     output_dir = job_dir / "output"
     output_name = f"{Path(row['source_name']).stem}.docx"
     output_path = output_dir / output_name
-    _set_job(job_id, status="running", message="Mengekstrak PDF dan menyusun struktur RAG dengan Codex…")
+    provider = row["provider"] if row["provider"] in {"heuristic", "codex", "openai"} else "heuristic"
+    provider_label = {"heuristic": "rule-based", "codex": "Codex AI", "openai": "OpenAI AI"}[provider]
+    _set_job(job_id, status="running", message=f"Mengekstrak PDF dan menyusun struktur RAG dengan mode {provider_label}…")
     if not CONVERTER.is_file():
         _set_job(job_id, status="failed", message="Skrip konverter tidak ditemukan.")
         return
 
     command = [
-        sys.executable, str(CONVERTER), "--provider", "codex",
+        sys.executable, str(CONVERTER), "--provider", provider,
         "--input-dir", str(source_dir), "--output-dir", str(output_dir),
         "--limit", "1", "--pages-per-call", os.getenv("KMS_PAGES_PER_CALL", "2"),
     ]
-    codex_model = os.getenv("CODEX_MODEL", "").strip()
+    codex_model = os.getenv("CODEX_MODEL", "").strip() if provider == "codex" else ""
     if codex_model:
         command.extend(["--model", codex_model])
     if os.getenv("KMS_ENABLE_OCR", "0") == "1":
         command.append("--ocr")
     process_env = os.environ.copy()
-    if not codex_model:
+    if provider == "codex" and not codex_model:
         process_env["OPENAI_MODEL"] = ""
     try:
         result = subprocess.run(command, cwd=ROOT, env=process_env, capture_output=True,
@@ -174,7 +181,7 @@ def _run_job(job_id: str) -> None:
         _set_job(job_id, status="failed", message="Konversi melewati batas waktu 2 jam; coba PDF yang lebih kecil.")
         return
     except OSError as exc:
-        _set_job(job_id, status="failed", message=f"Tidak dapat menjalankan Codex CLI: {exc}")
+        _set_job(job_id, status="failed", message=f"Tidak dapat menjalankan provider {provider}: {exc}")
         return
 
     report_path = output_dir / "batch-report.jsonl"
@@ -230,16 +237,31 @@ def home() -> FileResponse:
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     _ensure_worker()
-    return {"status": "ok", "provider": "Codex OAuth via local CLI", "codex": _codex_status(),
-            "max_upload_bytes": MAX_UPLOAD_BYTES}
+    return {
+        "status": "ok",
+        "providers": {
+            "heuristic": {"available": True, "description": "Rule-based offline baseline; no AI login required."},
+            "codex": _codex_status(),
+            "openai": {"configured": bool(os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_BEARER_TOKEN"))},
+        },
+        "max_upload_bytes": MAX_UPLOAD_BYTES,
+    }
 
 
 @app.post("/api/jobs", status_code=202)
-async def create_job(file: UploadFile = File(...)) -> dict[str, Any]:
+async def create_job(
+    file: UploadFile = File(...),
+    provider: str = Form("heuristic"),
+) -> dict[str, Any]:
     _ensure_worker()
-    codex = _codex_status()
-    if not codex["available"] or not codex["authenticated"]:
-        raise HTTPException(status_code=503, detail=codex["message"])
+    if provider not in {"heuristic", "codex", "openai"}:
+        raise HTTPException(status_code=400, detail="Provider tidak dikenal.")
+    if provider == "codex":
+        codex = _codex_status()
+        if not codex["available"] or not codex["authenticated"]:
+            raise HTTPException(status_code=503, detail=codex["message"])
+    if provider == "openai" and not (os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_BEARER_TOKEN")):
+        raise HTTPException(status_code=503, detail="OPENAI_API_KEY atau OPENAI_BEARER_TOKEN belum dikonfigurasi pada server lokal.")
     source_name = _safe_filename(file.filename or "source.pdf")
     job_id = uuid.uuid4().hex
     job_dir = JOBS_DIR / job_id
@@ -272,8 +294,8 @@ async def create_job(file: UploadFile = File(...)) -> dict[str, Any]:
     timestamp = _now()
     with _connect() as connection:
         connection.execute(
-            "INSERT INTO jobs(id, source_name, status, message, created_at, updated_at) VALUES (?, ?, 'queued', ?, ?, ?)",
-            (job_id, source_name, "PDF masuk antrean.", timestamp, timestamp),
+            "INSERT INTO jobs(id, source_name, status, message, provider, created_at, updated_at) VALUES (?, ?, 'queued', ?, ?, ?, ?)",
+            (job_id, source_name, "PDF masuk antrean.", provider, timestamp, timestamp),
         )
     _queue.put(job_id)
     row = _fetch_job(job_id)
