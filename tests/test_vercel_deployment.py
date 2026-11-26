@@ -60,6 +60,28 @@ class VercelDeploymentContractTests(unittest.TestCase):
             {"fastapi", "python-multipart", "pymupdf", "python-docx"}.issubset(packages)
         )
 
+    def test_vercel_host_allowlist_includes_production_and_custom_domains(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "VERCEL_URL": "structurarag-preview-123.vercel.app",
+                "VERCEL_BRANCH_URL": "structurarag-git-main-ripan.vercel.app",
+                "VERCEL_PROJECT_PRODUCTION_URL": "structurarag.vercel.app",
+                "STRUCTURARAG_ALLOWED_HOSTS": "custom.example.com,https://documents.example.org",
+            },
+            clear=True,
+        ):
+            self.assertEqual(
+                app_module._allowed_vercel_hosts(),
+                {
+                    "structurarag-preview-123.vercel.app",
+                    "structurarag-git-main-ripan.vercel.app",
+                    "structurarag.vercel.app",
+                    "custom.example.com",
+                    "documents.example.org",
+                },
+            )
+
     def test_vercel_local_model_requires_https_endpoint(self) -> None:
         with patch.object(app_module, "IS_VERCEL", True):
             with patch.dict(os.environ, {"STRUCTURARAG_LOCAL_AI_BASE_URL": "http://localhost:11434/v1"}):
