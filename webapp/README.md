@@ -25,10 +25,12 @@ Optional settings:
 | --- | --- | --- |
 | `CODEX_MODEL` | Codex CLI default | Explicit Codex CLI model, if desired |
 | `CODEX_CLI` | `codex` | Override Codex executable name/path |
-| `KMS_MAX_UPLOAD_BYTES` | 50 MiB | Local upload limit |
-| `KMS_PAGES_PER_CALL` | 2 | PDF pages sent to Codex per request |
-| `KMS_ENABLE_OCR` | `0` | Set to `1` after Tesseract and `ind+eng` data are installed |
-| `KMS_WEB_DATA_DIR` | `.webapp-data` | Local job database and document storage path |
+| `STRUCTURARAG_MAX_UPLOAD_BYTES` | 50 MiB | Local upload limit |
+| `STRUCTURARAG_PAGES_PER_CALL` | 2 | PDF pages sent per AI request |
+| `STRUCTURARAG_ENABLE_OCR` | `0` | Set to `1` after Tesseract and `ind+eng` data are installed |
+| `STRUCTURARAG_WEB_DATA_DIR` | `.webapp-data` | Local job database and document storage path |
+
+The previous `KMS_MAX_UPLOAD_BYTES`, `KMS_PAGES_PER_CALL`, `KMS_ENABLE_OCR`, and `KMS_WEB_DATA_DIR` names remain supported as backward-compatible aliases.
 
 ## OAuth and hosting boundary
 
