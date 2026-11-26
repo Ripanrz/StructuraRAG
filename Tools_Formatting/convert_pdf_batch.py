@@ -34,10 +34,12 @@ DEFAULT_OUTPUT = ROOT / "docx-e-hukum-generated"
 PROFILE_PATH = Path(__file__).with_name("gold_standard_profile.json")
 SUMMARY_PATH = Path(__file__).with_name("gold_standard_rules.md")
 NOISE_PATTERNS = [
-    re.compile(r"e[\s-]?hukum", re.I),
-    re.compile(r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\s+\d{1,2}:\d{2}(?::\d{2})?\b"),
-    re.compile(r"diverifikasi\s+oleh", re.I),
-    re.compile(r"nomor\s+registrasi", re.I),
+    # Remove only standalone watermark/metadata blocks. A substantive paragraph
+    # that merely mentions "E-Hukum" or a registration number must be retained.
+    re.compile(r"^\s*e[\s-]?hukum\s*$", re.I),
+    re.compile(r"^\s*\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\s+\d{1,2}:\d{2}(?::\d{2})?\s*$"),
+    re.compile(r"^\s*diverifikasi\s+oleh(?:\s+.*)?$", re.I),
+    re.compile(r"^\s*nomor\s+registrasi(?:\s+.*)?$", re.I),
 ]
 IMAGE_TOKEN_RE = re.compile(r"\[\[IMAGE:([A-Za-z0-9_-]+)\]\]")
 TABLE_TOKEN_RE = re.compile(r"@TABLE_(?:START|END)")
@@ -54,7 +56,7 @@ def is_noise(text: str, repeated: set[str]) -> bool:
         return True
     if cleaned.casefold() in repeated:
         return True
-    return any(pattern.search(cleaned) for pattern in NOISE_PATTERNS)
+    return any(pattern.fullmatch(cleaned) for pattern in NOISE_PATTERNS)
 
 
 def repeated_margin_text(pdf: fitz.Document) -> set[str]:
@@ -328,14 +330,30 @@ def validate_llm_output(text: str, page_events: dict[int, list[dict[str, Any]]])
         for events in page_events.values() for event in events
     )
     clean_output = IMAGE_TOKEN_RE.sub(" ", text)
-    clean_output = re.sub(r"^\s*@(?:PAGE\b|h\d+\b|TABLE_START\b|TABLE_END\b).*?$", " ", clean_output, flags=re.M)
-    clean_output = re.sub(r"^\s*KOLOM:\s*", " ", clean_output, flags=re.M)
+    clean_output = re.sub(r"^\s*@PAGE\s+\d+\s*$", " ", clean_output, flags=re.M)
+    clean_output = re.sub(r"^\s*@h\d+\s+", "", clean_output, flags=re.M)
+    clean_output = re.sub(r"^\s*@TABLE_(?:START|END)\s*$", " ", clean_output, flags=re.M)
+    clean_output = re.sub(r"^\s*@IMAGE\s+\[.*?\]\s*$", " ", clean_output, flags=re.M)
+    clean_output = re.sub(r"^\s*KOLOM:\s*", "", clean_output, flags=re.M)
     source_counts = Counter(w.casefold() for w in re.findall(r"[\w]+", source_text, flags=re.UNICODE) if len(w) > 1)
     output_counts = Counter(w.casefold() for w in re.findall(r"[\w]+", clean_output, flags=re.UNICODE) if len(w) > 1)
     source_total = sum(source_counts.values())
     coverage = sum(min(count, output_counts[word]) for word, count in source_counts.items()) / source_total if source_total else 1.0
     if coverage < .78:
         raise ValueError(f"Pemeriksaan retensi teks gagal: hanya {coverage:.0%} token sumber dipertahankan (ambang 78%).")
+
+    # Legal references and quantities are especially sensitive to small edits.
+    number_pattern = r"(?<!\w)\d+(?:[./-]\d+)*(?!\w)"
+    source_numbers = Counter(re.findall(number_pattern, source_text))
+    output_numbers = Counter(re.findall(number_pattern, clean_output))
+    missing_numbers = {
+        number: count - output_numbers[number]
+        for number, count in source_numbers.items()
+        if output_numbers[number] < count
+    }
+    if missing_numbers:
+        raise ValueError(f"Pemeriksaan preservasi angka gagal: angka/nomor sumber hilang atau berubah {missing_numbers}.")
+
     return text
 
 
