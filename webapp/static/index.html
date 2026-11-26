@@ -241,9 +241,17 @@
         if (runtimeMode === 'vercel') {
           const response = await fetch('/api/convert', { method:'POST', body:form });
           if (!response.ok) {
-            let detail = 'Konversi gagal.';
-            try { detail = (await response.json()).detail || detail; } catch (_) {}
-            throw new Error(detail);
+            const responseText = await response.text();
+            let detail = responseText || response.statusText || 'Tidak ada detail dari server.';
+            try {
+              const payload = JSON.parse(responseText);
+              detail = payload.detail || payload.message || detail;
+            } catch (_) {
+              // Vercel platform/runtime errors can arrive as non-JSON text or HTML.
+            }
+            const requestId = response.headers.get('x-vercel-id');
+            const suffix = requestId ? ` · Vercel ID: ${requestId}` : '';
+            throw new Error(`HTTP ${response.status}: ${detail}${suffix}`);
           }
           const blob = await response.blob();
           const downloadUrl = URL.createObjectURL(blob);
