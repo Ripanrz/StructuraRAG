@@ -46,6 +46,26 @@ VERCEL_MAX_UPLOAD_BYTES = min(
 VERCEL_CONVERT_TIMEOUT = min(int(os.getenv("STRUCTURARAG_VERCEL_CONVERT_TIMEOUT", "240")), 270)
 IS_VERCEL = os.getenv("VERCEL") == "1"
 
+def _allowed_vercel_hosts() -> set[str]:
+    """Return deployment and explicitly configured domains accepted by the app."""
+    candidates = [
+        os.getenv("VERCEL_URL", ""),
+        os.getenv("VERCEL_BRANCH_URL", ""),
+        os.getenv("VERCEL_PROJECT_PRODUCTION_URL", ""),
+        *os.getenv("STRUCTURARAG_ALLOWED_HOSTS", "").split(","),
+    ]
+    allowed: set[str] = set()
+    for candidate in candidates:
+        value = candidate.strip()
+        if not value:
+            continue
+        parsed = urlparse(value if "://" in value else f"//{value}")
+        hostname = (parsed.hostname or "").rstrip(".").lower()
+        if hostname:
+            allowed.add(hostname)
+    return allowed
+
+
 app = FastAPI(title="StructuraRAG", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=Path(__file__).with_name("static")), name="static")
 
@@ -57,18 +77,11 @@ _worker_lock = threading.Lock()
 @app.middleware("http")
 async def local_request_guard(request, call_next):
     """Apply loopback-only checks locally and host/password checks on Vercel."""
-    host = request.headers.get("host", "").split(":", 1)[0].strip("[]").lower()
+    host = (request.url.hostname or "").rstrip(".").lower()
     origin = request.headers.get("origin")
 
     if IS_VERCEL:
-        allowed_hosts = {
-            value.strip().lower()
-            for value in os.getenv("STRUCTURARAG_ALLOWED_HOSTS", "").split(",")
-            if value.strip()
-        }
-        vercel_host = os.getenv("VERCEL_URL", "").split(":", 1)[0].lower()
-        if vercel_host:
-            allowed_hosts.add(vercel_host)
+        allowed_hosts = _allowed_vercel_hosts()
         if host not in allowed_hosts:
             return JSONResponse({"detail": "Host tidak diizinkan. Tambahkan domain kustom ke STRUCTURARAG_ALLOWED_HOSTS bila diperlukan."}, status_code=403)
 
