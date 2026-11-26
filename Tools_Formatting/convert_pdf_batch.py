@@ -540,7 +540,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--provider", choices=("openai", "codex", "heuristic", "local"), default="openai")
+    parser.add_argument("--provider", choices=("heuristic", "local", "openai", "codex"), default="heuristic")
     parser.add_argument("--model", default=os.getenv("OPENAI_MODEL", "gpt-4.1"), help="Responses API model or optional Codex CLI model")
     parser.add_argument("--base-url", default=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"))
     parser.add_argument("--pages-per-call", type=int, default=2)
