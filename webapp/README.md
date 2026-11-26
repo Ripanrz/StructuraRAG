@@ -1,46 +1,86 @@
-# StructuraRAG — Local Web Interface
+# StructuraRAG — Web Interface
 
-Local web interface for StructuraRAG's current PDF-to-structured-DOCX workflow. It uploads one PDF, queues conversion, reports status, and serves the resulting DOCX. I can choose an offline rule-based baseline, Codex CLI, or OpenAI API. The web worker passes the selected provider to `Tools_Formatting/convert_pdf_batch.py`.
+The web application exposes three product choices:
 
-## Run on Windows
+1. **Rule-Based** — offline deterministic processing, with no AI login.
+2. **AI Lokal** — Ollama or another OpenAI-compatible model endpoint that I control.
+3. **AI Cloud** — intended to use Sign in with ChatGPT OAuth. This is currently gated for remote Vercel hosting until OpenAI approves the hosted ChatGPT plan inference use case and the full OAuth/session implementation is completed.
+
+The application supports PDF uploads only.
+
+## Run locally on Windows
 
 From the repository root in PowerShell:
 
-```powershell
+~~~powershell
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r Tools_Formatting\requirements.txt
-python -m pip install -r webapp\requirements.txt
-# Optional: authenticate first only if I choose the Codex AI provider
-# codex login
-# codex login status
+python -m pip install -r requirements.txt
 .\webapp\start.ps1
-```
+~~~
 
-Open <http://127.0.0.1:8000>. Keep the terminal open while the site is in use. A job and its artifacts are stored under `.webapp-data/`; do not commit this directory. The web process is intentionally bound to loopback and has no multi-user authentication. This prototype currently supports PDF uploads only. The rule-based provider can run without AI credentials.
+Open http://127.0.0.1:8000.
 
-For the OpenAI provider, I configure `OPENAI_API_KEY` or `OPENAI_BEARER_TOKEN` in the local server environment. The key is never entered into the browser. The Codex provider requires a local authenticated CLI session. The rule-based provider requires neither.
+Rule-Based works immediately. The local app uses a SQLite-backed job queue and writes job artifacts under `.webapp-data/`. This local queue is deliberately not used by Vercel.
 
-Optional settings:
+## Configure AI Lokal
 
-| Environment variable | Default | Purpose |
-| --- | --- | --- |
-| `CODEX_MODEL` | Codex CLI default | Explicit Codex CLI model, if desired |
-| `CODEX_CLI` | `codex` | Override Codex executable name/path |
+Install Ollama, then pull and run a chat model:
+
+~~~powershell
+ollama pull qwen2.5:7b-instruct
+ollama serve
+~~~
+
+Configure the endpoint before launching StructuraRAG:
+
+~~~powershell
+$env:STRUCTURARAG_LOCAL_AI_BASE_URL = "http://127.0.0.1:11434/v1"
+$env:STRUCTURARAG_LOCAL_AI_MODEL = "qwen2.5:7b-instruct"
+.\webapp\start.ps1
+~~~
+
+If the endpoint requires a bearer token, set `STRUCTURARAG_LOCAL_AI_API_KEY` in the same server environment. The browser never receives this credential.
+
+Supported endpoint contract: OpenAI-compatible `POST /chat/completions`.
+
+## Local application settings
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `STRUCTURARAG_LOCAL_AI_BASE_URL` | `http://127.0.0.1:11434/v1` locally | Model API base URL |
+| `STRUCTURARAG_LOCAL_AI_MODEL` | `qwen2.5:7b-instruct` | Local model name |
+| `STRUCTURARAG_LOCAL_AI_API_KEY` | Empty | Optional model endpoint bearer token |
 | `STRUCTURARAG_MAX_UPLOAD_BYTES` | 50 MiB | Local upload limit |
-| `STRUCTURARAG_PAGES_PER_CALL` | 2 | PDF pages sent per AI request |
-| `STRUCTURARAG_ENABLE_OCR` | `0` | Set to `1` after Tesseract and `ind+eng` data are installed |
-| `STRUCTURARAG_WEB_DATA_DIR` | `.webapp-data` | Local job database and document storage path |
+| `STRUCTURARAG_PAGES_PER_CALL` | 2 | PDF pages per AI request |
+| `STRUCTURARAG_ENABLE_OCR` | `0` | Enables local Tesseract OCR when set to `1` |
+| `STRUCTURARAG_WEB_DATA_DIR` | `.webapp-data` | SQLite jobs and local files |
 
-The previous `KMS_MAX_UPLOAD_BYTES`, `KMS_PAGES_PER_CALL`, `KMS_ENABLE_OCR`, and `KMS_WEB_DATA_DIR` names remain supported as backward-compatible aliases.
+Legacy `KMS_*` variables remain accepted as backward-compatible aliases where implemented.
 
-## OAuth and hosting boundary
+## Deploy to Vercel
 
-The app does not copy Codex credentials into the browser or source tree. When I choose Codex, the local CLI performs sign-in and the server checks `codex login status`. When I choose OpenAI, the server reads the configured environment credential. Rule-based mode does not contact an AI provider. This is a single-user local deployment.
+The root-level `index.py`, `requirements.txt`, and `vercel.json` are configured for Vercel's Python/FastAPI runtime. Vercel uses a stateless endpoint:
 
-This is **not yet safe to expose directly to the public internet or deploy as a complete Vercel app**. Vercel Functions are ephemeral/serverless, impose a 4.5 MB request/response limit, and do not provide this app's persistent queue/worker model. A proper online version needs an authenticated web tier, durable storage/database, and a long-running worker. Using a ChatGPT plan OAuth flow in a remotely hosted private app also requires OpenAI eligibility/access; local CLI login does not confer that permission. Do not put CLI token files or OAuth refresh tokens in GitHub, browser storage, or ordinary Vercel environment variables.
+- `POST /api/convert` accepts a PDF and selected provider.
+- The function uses a temporary directory for each request.
+- DOCX is returned directly to the browser.
+- No Vercel SQLite queue or in-process background thread is used.
+- Default upload size is 4 MiB; conversion timeout is 240 seconds.
+- The Vercel UI does not promise document history or persistent file storage.
 
-Until those are available, use the local version over `127.0.0.1`. Vercel can host a future UI once it is separated from the worker and connected to durable infrastructure; connecting the current local app to Vercel alone would not make its conversion jobs work online.
+Follow the complete [Vercel deployment guide](../docs/VERCEL_DEPLOYMENT.md) for GitHub import, environment variables, password protection, AI Lokal HTTPS setup, limits, and the ChatGPT OAuth approval boundary.
 
-## Quality and review
+## Cloud OAuth status
 
-The converter validates structural markers before emitting DOCX, but an LLM can still misread legal text, tables, or hierarchy. Review the generated DOCX and its warnings before treating it as a trusted knowledge-base source. Use one pilot PDF first.
+The Cloud AI entry is intentionally visible but disabled. OpenAI documents identity sign-in separately from permission to use a user's ChatGPT plan for model inference. Remotely hosted apps need to complete the OpenAI approval/interest process before ChatGPT plan inference can be enabled.
+
+Do not copy Codex CLI token files or refresh tokens into Vercel environment variables. Do not store OAuth credentials in browser storage. Once the hosted use case is approved, the OAuth flow must use state/nonce and PKCE validation, verified identity/permissions, encrypted server-side token storage, refresh/revocation handling, and per-user access controls.
+
+See the official [Sign in with ChatGPT documentation](https://developers.openai.com/siwc/token-sharing-open-source).
+
+## Privacy and deployment boundary
+
+The local app binds to loopback and is a single-user prototype. The Vercel version is stateless for conversion requests but is not a full multi-user SaaS application. Set `STRUCTURARAG_ACCESS_PASSWORD` or enable Vercel Deployment Protection before sharing the hosted URL. Use HTTPS for external model endpoints and never expose an unauthenticated Ollama port to the public internet.
+
+For large PDFs, lengthy OCR, or batch workloads, use an object store, persistent queue, and worker service. Do not rely on temporary files, SQLite, or background threads for durable hosted jobs.
