@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import importlib
+import io
 import json
 import os
+import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -22,6 +25,7 @@ class VercelDeploymentContractTests(unittest.TestCase):
         self.assertIn("/", routes)
         self.assertIn("/api/health", routes)
         self.assertIn("/api/convert", routes)
+        self.assertIn("/api/jobs/{job_id}/download-bundle", routes)
         self.assertTrue((ROOT / "Tools_Formatting" / "convert_pdf_batch.py").is_file())
         self.assertTrue((ROOT / "webapp" / "static" / "index.html").is_file())
         self.assertTrue((ROOT / "webapp" / "static" / "logo.svg").is_file())
@@ -122,6 +126,41 @@ class VercelDeploymentContractTests(unittest.TestCase):
                     app_module._local_ai_base_url(),
                     "http://127.0.0.1:11434/v1",
                 )
+
+    def test_rag_artifact_bundle_contains_docx_and_all_sidecars(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            (output / "example.docx").write_bytes(b"docx-bytes")
+            (output / "example.txt").write_text("@PAGE 1\\n", encoding="utf-8")
+            (output / "example.chunks.jsonl").write_text('{"chunk_id":"x"}\\n', encoding="utf-8")
+            (output / "example.manifest.json").write_text('{"pages":1}', encoding="utf-8")
+            payload = app_module._build_rag_artifact_bundle(output, "example.docx")
+            with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+                self.assertEqual(
+                    set(archive.namelist()),
+                    {
+                        "example.docx",
+                        "example.txt",
+                        "example.chunks.jsonl",
+                        "example.manifest.json",
+                    },
+                )
+                self.assertIsNone(archive.testzip())
+
+    def test_rag_artifact_bundle_rejects_path_traversal_and_missing_sidecars(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            with self.assertRaisesRegex(ValueError, "tidak valid"):
+                app_module._build_rag_artifact_bundle(output, "../outside.docx")
+            (output / "example.docx").write_bytes(b"docx-bytes")
+            with self.assertRaises(FileNotFoundError):
+                app_module._build_rag_artifact_bundle(output, "example.docx")
+
+    def test_frontend_exposes_optional_rag_bundle_and_local_download(self) -> None:
+        html = (ROOT / "webapp" / "static" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('value="rag_bundle"', html)
+        self.assertIn("/download-bundle", html)
+        self.assertIn("RAG chunks JSONL", html)
 
 
 if __name__ == "__main__":
