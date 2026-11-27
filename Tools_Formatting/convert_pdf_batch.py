@@ -100,6 +100,34 @@ def _is_decorative_cover_asset(rect: fitz.Rect, page_rect: fitz.Rect, page_numbe
     return width_ratio >= 0.32 and height_ratio <= 0.09 and aspect >= 3.5
 
 
+def _is_blank_raster(image_bytes: bytes, sample_side: int = 24) -> bool:
+    """Detect uniform/empty raster blocks that otherwise render as black rectangles.
+
+    PyMuPDF can expose some masked or unsupported PDF image XObjects as a
+    constant-color RGB buffer. Sampling a small grid avoids scanning every pixel.
+    """
+    try:
+        pixmap = fitz.Pixmap(image_bytes)
+        channels = pixmap.n - (1 if pixmap.alpha else 0)
+        if pixmap.width < 2 or pixmap.height < 2 or channels < 1:
+            return True
+        samples = pixmap.samples
+        stride = pixmap.n
+        colors = set()
+        for row in range(sample_side):
+            y = min(pixmap.height - 1, round(row * (pixmap.height - 1) / max(1, sample_side - 1)))
+            for col in range(sample_side):
+                x = min(pixmap.width - 1, round(col * (pixmap.width - 1) / max(1, sample_side - 1)))
+                offset = (y * pixmap.width + x) * stride
+                colors.add(tuple(samples[offset:offset + channels]))
+                if len(colors) > 1:
+                    return False
+        return True
+    except Exception:
+        # An image that cannot be decoded for inspection should be retained.
+        return False
+
+
 def _reading_order_keyed(events: list[dict[str, Any]], page_width: float) -> list[dict[str, Any]]:
     """Order clearly separated two-column pages column-wise; otherwise use y/x."""
     positioned = []
@@ -145,11 +173,22 @@ def _reading_order_keyed(events: list[dict[str, Any]], page_width: float) -> lis
     ))
 
 
-def build_rag_chunks(dsl: str, source_name: str, max_chars: int = 3500) -> list[dict[str, Any]]:
+def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
+    """Hash a file incrementally so large PDFs are not read into memory at once."""
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(chunk_size), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def build_rag_chunks(
+    dsl: str, source_name: str, max_chars: int = 3500, document_id: str | None = None
+) -> list[dict[str, Any]]:
     """Create deterministic heading-aware chunks from validated DSL."""
     if max_chars < 300:
         raise ValueError("--chunk-max-chars harus minimal 300.")
-    document_id = hashlib.sha256(source_name.encode("utf-8")).hexdigest()[:12]
+    document_id = (document_id or hashlib.sha256(source_name.encode("utf-8")).hexdigest())[:12]
     heading_path: dict[int, str] = {}
     blocks: list[dict[str, Any]] = []
     page_number = 1
@@ -202,6 +241,36 @@ def build_rag_chunks(dsl: str, source_name: str, max_chars: int = 3500) -> list[
             "heading_path": dict(heading_path), "image_anchor": None,
         })
 
+    # Split oversized tables by complete rows. Repeat the column header on
+    # continuation chunks so retrieval never receives orphaned cell values.
+    expanded_blocks: list[dict[str, Any]] = []
+    for block in blocks:
+        if block["type"] != "table" or len(block["content"]) <= max_chars:
+            expanded_blocks.append(block)
+            continue
+        table_lines = block["content"].splitlines()
+        header = table_lines[1] if len(table_lines) > 1 and table_lines[1].upper().startswith("KOLOM:") else None
+        rows = table_lines[2:] if header else table_lines[1:]
+        row_groups: list[list[str]] = []
+        current_rows: list[str] = []
+        current_size = len("TABLE\n") + (len(header) + 1 if header else 0)
+        for row in rows:
+            if current_rows and current_size + len(row) + 1 > max_chars:
+                row_groups.append(current_rows)
+                current_rows = []
+                current_size = len("TABLE\n") + (len(header) + 1 if header else 0)
+            current_rows.append(row)
+            current_size += len(row) + 1
+        if current_rows:
+            row_groups.append(current_rows)
+        for part_number, group_rows in enumerate(row_groups, start=1):
+            content = "TABLE\n" + ((header + "\n") if header else "") + "\n".join(group_rows)
+            expanded_blocks.append({
+                **block, "content": content, "table_part": part_number,
+                "table_parts": len(row_groups),
+            })
+    blocks = expanded_blocks
+
     chunks: list[dict[str, Any]] = []
     current: list[dict[str, Any]] = []
     current_chars = 0
@@ -228,6 +297,10 @@ def build_rag_chunks(dsl: str, source_name: str, max_chars: int = 3500) -> list[
                 "source_file": source_name, "source_pages": pages,
                 "heading_path": headings, "block_types": block_types,
                 "image_anchors": images, "sequence": sequence,
+                "table_parts": [
+                    {"part": block["table_part"], "total": block["table_parts"]}
+                    for block in current if block.get("table_part")
+                ],
             },
         })
         current = []
@@ -239,6 +312,7 @@ def build_rag_chunks(dsl: str, source_name: str, max_chars: int = 3500) -> list[
             emit()
         current_path = path
         content = block["content"]
+        heading_prefix_chars = len(" > ".join(current_path.values())) + (2 if current_path else 0)
         if len(content) > max_chars and block["type"] == "paragraph":
             emit()
             remaining = content
@@ -254,7 +328,7 @@ def build_rag_chunks(dsl: str, source_name: str, max_chars: int = 3500) -> list[
                 current = [{**block, "content": remaining}]
                 current_chars = len(remaining)
             continue
-        if current and current_chars + len(content) + 1 > max_chars:
+        if current and current_chars + len(content) + 1 + heading_prefix_chars > max_chars:
             emit()
             current_path = path
         current.append(block)
@@ -303,7 +377,12 @@ def extract_page_events(page: fitz.Page, page_number: int, repeated: set[str], i
             })
         elif block.get("type") == 1 and block.get("image"):
             image_rect = fitz.Rect(bbox)
-            if _is_page_background(image_rect, page.rect) or _is_decorative_cover_asset(image_rect, page.rect, page_number):
+            image_bytes = block["image"]
+            if (
+                _is_page_background(image_rect, page.rect)
+                or _is_decorative_cover_asset(image_rect, page.rect, page_number)
+                or _is_blank_raster(image_bytes)
+            ):
                 continue
             image_index += 1
             token = f"P{page_number}I{image_index}"
@@ -714,90 +793,130 @@ def convert_one(pdf_path: Path, output_path: Path, args: argparse.Namespace, run
     image_dir = run_dir / (pdf_path.stem + "_images")
     image_dir.mkdir(parents=True, exist_ok=True)
     pdf = fitz.open(pdf_path)
-    repeated = repeated_margin_text(pdf)
-    page_events: dict[int, list[dict[str, Any]]] = {}
     images: dict[str, Path] = {}
     warnings = (["Provider heuristik aktif: output hanya untuk diagnosis ekstraksi dan tidak dinyatakan memenuhi gold standard."]
                 if args.provider == "heuristic" else [])
-    for page_number, page in enumerate(pdf, start=1):
-        events, extracted = extract_page_events(page, page_number, repeated, image_dir, use_ocr=args.ocr)
-        page_events[page_number] = events
-        images.update(extracted)
-        if not any(event["kind"] in {"text", "table"} for event in events):
-            warnings.append(f"Page {page_number} has no extractable text/table; scanned source may need OCR." )
-    pdf.close()
-
-    output_parts = []
+    output_parts: list[str] = []
     prior_headings: list[str] = []
-    pages = list(page_events)
-    for start in range(0, len(pages), args.pages_per_call):
-        page_ids = pages[start:start + args.pages_per_call]
-        group = {number: page_events[number] for number in page_ids}
-        prompt = make_prompt(group, prior_headings, use_vision=args.vision)
-        try:
-            if args.provider == "openai":
-                page_images = []
-                if args.vision:
-                    source_doc = fitz.open(pdf_path)
-                    try:
-                        for number in page_ids:
-                            pix = source_doc[number - 1].get_pixmap(matrix=fitz.Matrix(1.4, 1.4), alpha=False)
-                            page_images.append(pix.tobytes("png"))
-                    finally:
-                        source_doc.close()
-                raw = openai_response(prompt, args.model, args.base_url, page_images or None)
-            elif args.provider == "codex":
-                raw = codex_response(prompt, args.model, args.timeout)
-            elif args.provider == "local":
-                local_base_url = os.getenv("STRUCTURARAG_LOCAL_AI_BASE_URL", "http://127.0.0.1:11434/v1")
-                local_model = os.getenv("STRUCTURARAG_LOCAL_AI_MODEL", "qwen2.5:7b-instruct")
-                local_api_key = os.getenv("STRUCTURARAG_LOCAL_AI_API_KEY")
-                raw = local_ai_response(
-                    prompt, local_model, local_base_url, local_api_key, args.timeout
+
+    try:
+        repeated = repeated_margin_text(pdf)
+        total_pages = pdf.page_count
+
+        # Extract and process only one model batch at a time. This avoids keeping
+        # every page's text blocks, tables, and image payloads in memory.
+        for start in range(0, total_pages, args.pages_per_call):
+            page_ids = list(range(start + 1, min(start + args.pages_per_call, total_pages) + 1))
+            group: dict[int, list[dict[str, Any]]] = {}
+            for page_number in page_ids:
+                events, extracted = extract_page_events(
+                    pdf[page_number - 1], page_number, repeated, image_dir, use_ocr=args.ocr
                 )
-            else:
-                raw = ""
-            converted = validate_llm_output(raw, group) if args.provider != "heuristic" else ""
-            if args.provider == "heuristic":
-                converted = "\n\n".join(fallback_page_dsl(n, group[n]) for n in page_ids)
-        except Exception as exc:
-            if not args.allow_fallback:
-                raise
-            warnings.append(f"Pages {page_ids}: LLM failed; low-confidence fallback used ({exc})")
-            converted = "\n\n".join(fallback_page_dsl(n, group[n]) for n in page_ids)
-        converted, _ = resolve_image_tokens(converted, group)
-        output_parts.append(converted.strip())
-        prior_headings.extend(re.findall(r"^@h\d+\s+.+$", converted, flags=re.M))
+                group[page_number] = events
+                images.update(extracted)
+                if not any(event["kind"] in {"text", "table"} for event in events):
+                    warnings.append(
+                        f"Page {page_number} has no extractable text/table; scanned source may need OCR."
+                    )
+
+            prompt = make_prompt(group, prior_headings, use_vision=args.vision)
+            try:
+                if args.provider == "openai":
+                    page_images = []
+                    if args.vision:
+                        for number in page_ids:
+                            pix = pdf[number - 1].get_pixmap(
+                                matrix=fitz.Matrix(1.4, 1.4), alpha=False
+                            )
+                            page_images.append(pix.tobytes("png"))
+                    raw = openai_response(prompt, args.model, args.base_url, page_images or None)
+                elif args.provider == "codex":
+                    raw = codex_response(prompt, args.model, args.timeout)
+                elif args.provider == "local":
+                    local_base_url = os.getenv(
+                        "STRUCTURARAG_LOCAL_AI_BASE_URL", "http://127.0.0.1:11434/v1"
+                    )
+                    local_model = os.getenv(
+                        "STRUCTURARAG_LOCAL_AI_MODEL", "qwen2.5:7b-instruct"
+                    )
+                    local_api_key = os.getenv("STRUCTURARAG_LOCAL_AI_API_KEY")
+                    raw = local_ai_response(
+                        prompt, local_model, local_base_url, local_api_key, args.timeout
+                    )
+                else:
+                    raw = ""
+                converted = validate_llm_output(raw, group) if args.provider != "heuristic" else ""
+                if args.provider == "heuristic":
+                    converted = "\n\n".join(
+                        fallback_page_dsl(number, group[number]) for number in page_ids
+                    )
+            except Exception as exc:
+                if not args.allow_fallback:
+                    raise
+                warnings.append(
+                    f"Pages {page_ids}: LLM failed; low-confidence fallback used ({exc})"
+                )
+                converted = "\n\n".join(
+                    fallback_page_dsl(number, group[number]) for number in page_ids
+                )
+
+            converted, _ = resolve_image_tokens(converted, group)
+            output_parts.append(converted.strip())
+            prior_headings.extend(
+                re.findall(r"^@h\d+\s+.+$", converted, flags=re.M)
+            )
+    finally:
+        pdf.close()
 
     full_dsl = "\n\n".join(output_parts).strip() + "\n"
     if args.provider != "heuristic" and full_dsl.count("@h0 ") != 1:
-        raise RuntimeError(f"Pemeriksaan gold standard gagal: harus ada tepat satu @h0 judul utama; ditemukan {full_dsl.count('@h0 ')}.")
+        raise RuntimeError(
+            "Pemeriksaan gold standard gagal: harus ada tepat satu @h0 judul utama; "
+            f"ditemukan {full_dsl.count('@h0 ')}."
+        )
     if full_dsl.count("@TABLE_START") != full_dsl.count("@TABLE_END"):
         raise RuntimeError("Pemeriksaan akhir gagal: jumlah marker tabel tidak berpasangan.")
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     write_docx(full_dsl, output_path, images)
     text_path = output_path.with_suffix(".txt")
     text_path.write_text(full_dsl, encoding="utf-8")
-    chunks = build_rag_chunks(full_dsl, pdf_path.name, max_chars=args.chunk_max_chars)
+
+    source_hash = sha256_file(pdf_path)
+    chunks = build_rag_chunks(
+        full_dsl, pdf_path.name, max_chars=args.chunk_max_chars,
+        document_id=source_hash[:12],
+    )
     chunks_path = output_path.with_suffix(".chunks.jsonl")
     with chunks_path.open("w", encoding="utf-8") as chunk_file:
         for chunk in chunks:
             chunk_file.write(json.dumps(chunk, ensure_ascii=False) + "\n")
+
     manifest_path = output_path.with_suffix(".manifest.json")
     manifest_path.write_text(json.dumps({
-        "source": pdf_path.name, "output": output_path.name,
-        "dsl_output": text_path.name, "chunks_output": chunks_path.name,
-        "pages": len(page_events), "images": list(images), "chunk_count": len(chunks),
-        "chunk_max_chars": args.chunk_max_chars, "provider": args.provider,
+        "source": pdf_path.name,
+        "source_sha256": source_hash,
+        "output": output_path.name,
+        "dsl_output": text_path.name,
+        "chunks_output": chunks_path.name,
+        "pages": total_pages,
+        "images": list(images),
+        "chunk_count": len(chunks),
+        "chunk_max_chars": args.chunk_max_chars,
+        "provider": args.provider,
         "warnings": warnings,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     status = "heuristic" if args.provider == "heuristic" else ("warning" if warnings else "ok")
     return {
-        "source": pdf_path.name, "output": output_path.name, "pages": len(page_events),
-        "images": len(images), "chunks": len(chunks), "chunks_output": chunks_path.name,
-        "warnings": warnings, "status": status,
+        "source": pdf_path.name,
+        "output": output_path.name,
+        "pages": total_pages,
+        "images": len(images),
+        "chunks": len(chunks),
+        "chunks_output": chunks_path.name,
+        "warnings": warnings,
+        "status": status,
     }
-
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -820,6 +939,8 @@ def main() -> int:
         parser.error("--pages-per-call must be >= 1")
     if args.chunk_max_chars < 300:
         parser.error("--chunk-max-chars harus minimal 300.")
+    if args.limit is not None and args.limit < 1:
+        parser.error("--limit harus bernilai minimal 1.")
     if args.input and args.input_dir:
         parser.error("Gunakan salah satu dari --input atau --input-dir, bukan keduanya.")
     if args.vision and args.provider != "openai":
