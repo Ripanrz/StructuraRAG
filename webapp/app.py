@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import io
 import json
 import os
 import secrets
@@ -19,6 +20,7 @@ import sys
 import tempfile
 import threading
 import uuid
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -251,6 +253,27 @@ def _safe_filename(name: str) -> str:
     return cleaned[:180]
 
 
+def _build_rag_artifact_bundle(output_dir: Path, docx_name: str) -> bytes:
+    """Bundle one conversion's DOCX and RAG sidecars without unrelated job files."""
+    if Path(docx_name).name != docx_name or not docx_name.lower().endswith(".docx"):
+        raise ValueError("Nama output DOCX tidak valid.")
+    docx_path = output_dir / docx_name
+    files = [
+        docx_path,
+        docx_path.with_suffix(".txt"),
+        docx_path.with_suffix(".chunks.jsonl"),
+        docx_path.with_suffix(".manifest.json"),
+    ]
+    missing = [path.name for path in files if not path.is_file()]
+    if missing:
+        raise FileNotFoundError("Artefak konversi belum lengkap: " + ", ".join(missing))
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+        for path in files:
+            archive.write(path, arcname=path.name)
+    return buffer.getvalue()
+
+
 def _codex_status() -> dict[str, Any]:
     cli = shutil.which(os.getenv("CODEX_CLI", "codex"))
     if not cli:
@@ -453,10 +476,16 @@ async def create_job(
 
 
 @app.post("/api/convert")
-async def convert_vercel(file: UploadFile = File(...), provider: str = Form("heuristic")) -> Response:
+async def convert_vercel(
+    file: UploadFile = File(...),
+    provider: str = Form("heuristic"),
+    artifact: str = Form("docx"),
+) -> Response:
     """Synchronous, stateless conversion route for Vercel Functions."""
     if not IS_VERCEL:
         raise HTTPException(status_code=404, detail="Endpoint ini hanya digunakan pada deployment Vercel.")
+    if artifact not in {"docx", "rag_bundle"}:
+        raise HTTPException(status_code=400, detail="Pilih DOCX atau RAG Bundle.")
     if provider not in {"heuristic", "local"}:
         if provider == "cloud_oauth":
             raise HTTPException(
@@ -536,8 +565,17 @@ async def convert_vercel(file: UploadFile = File(...), provider: str = Form("heu
                 output_exists=output_path.is_file(),
             )
             raise HTTPException(status_code=422, detail=detail)
-        output_bytes = output_path.read_bytes()
-        output_filename = output_path.name
+        if artifact == "rag_bundle":
+            try:
+                output_bytes = _build_rag_artifact_bundle(output_dir, output_path.name)
+            except (OSError, ValueError) as exc:
+                raise HTTPException(status_code=500, detail=f"Gagal menyiapkan RAG Bundle: {exc}") from exc
+            output_filename = f"{output_path.stem}.structurarag.zip"
+            media_type = "application/zip"
+        else:
+            output_bytes = output_path.read_bytes()
+            output_filename = output_path.name
+            media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         if len(output_bytes) > 4 * 1024 * 1024:
             raise HTTPException(
                 status_code=413,
@@ -553,8 +591,32 @@ async def convert_vercel(file: UploadFile = File(...), provider: str = Form("heu
     }
     return Response(
         content=output_bytes,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        media_type=media_type,
         headers=headers,
+    )
+
+
+@app.get("/api/jobs/{job_id}/download-bundle")
+def download_job_bundle(job_id: str) -> Response:
+    """Download the local DOCX plus DSL, RAG JSONL chunks, and manifest."""
+    job = get_job(job_id)
+    if job["status"] != "completed" or not job["output_name"]:
+        raise HTTPException(status_code=409, detail="Artefak konversi belum siap.")
+    output_dir = JOBS_DIR / job_id / "output"
+    try:
+        payload = _build_rag_artifact_bundle(output_dir, job["output_name"])
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail=f"Gagal menyiapkan RAG Bundle: {exc}") from exc
+    filename = f"{Path(job['output_name']).stem}.structurarag.zip"
+    return Response(
+        content=payload,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store, private",
+        },
     )
 
 
