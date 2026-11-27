@@ -25,3 +25,5 @@ jobs:
         run: python -m pip install -r requirements.txt
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
+      - name: Build and validate Agensi skill package
+        run: python tools/build_agensi_package.py --source agensi --output dist/structurarag-pdf-to-rag-1.0.0.zip
