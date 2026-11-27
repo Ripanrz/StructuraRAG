@@ -159,7 +159,9 @@ def _reading_order_keyed(events: list[dict[str, Any]], page_width: float) -> lis
                 ]
                 def column_key(item: tuple[dict[str, Any], fitz.Rect]) -> tuple[int, int, float, float]:
                     event, rect = item
-                    region = sum(1 for _, boundary in full_width if boundary.y0 < rect.y0)
+                    # Use the bottom edge of full-width blocks as a region boundary.
+                    # This keeps section titles between the preceding and following columns.
+                    region = sum(1 for _, boundary in full_width if boundary.y1 < rect.y0)
                     column = 2 if rect.width >= page_width * 0.68 else (
                         0 if (rect.x0 + rect.x1) / 2 < split else 1
                     )
@@ -228,7 +230,7 @@ def build_rag_chunks(
             filename = image_match.group(1).strip()
             details = (image_match.group(2) or "").strip()
             blocks.append({
-                "content": f"[Image anchor: {filename}]",
+                "content": "",
                 "type": "image", "page": page_number,
                 "heading_path": dict(heading_path),
                 "image_anchor": {"filename": filename, "details": details},
@@ -283,7 +285,16 @@ def build_rag_chunks(
         path = current_path or {}
         headings = [{"level": level, "text": text} for level, text in sorted(path.items())]
         heading_prefix = " > ".join(item["text"] for item in headings)
-        body = "\n".join(block["content"] for block in current if block["content"])
+        body = "\n".join(
+            block["content"] for block in current
+            if block["content"] and block["type"] != "image"
+        )
+        # Image anchors are metadata, not textual retrieval content. A page
+        # containing only images must not create an empty/placeholder RAG chunk.
+        if not body:
+            current = []
+            current_chars = 0
+            return
         content = (heading_prefix + "\n\n" if heading_prefix else "") + body
         pages = sorted({block["page"] for block in current})
         images = [block["image_anchor"] for block in current if block["image_anchor"]]
@@ -332,7 +343,8 @@ def build_rag_chunks(
             emit()
             current_path = path
         current.append(block)
-        current_chars += len(content) + 1
+        if block["type"] != "image":
+            current_chars += len(content) + 1
     emit()
     return chunks
 
@@ -906,6 +918,9 @@ def convert_one(pdf_path: Path, output_path: Path, args: argparse.Namespace, run
         "provider": args.provider,
         "warnings": warnings,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
+    # The image files are only intermediate inputs to DOCX serialization.
+    # Remove them once the document has embedded the assets.
+    shutil.rmtree(image_dir, ignore_errors=True)
     status = "heuristic" if args.provider == "heuristic" else ("warning" if warnings else "ok")
     return {
         "source": pdf_path.name,
@@ -993,6 +1008,10 @@ def main() -> int:
     succeeded = sum(r["status"] in {"ok", "warning", "heuristic"} for r in results)
     failed = sum(r["status"] == "error" for r in results)
     print(f"Finished: {succeeded} converted, {skipped} skipped, {failed} failed. Output: {args.output_dir}")
+    try:
+        run_dir.rmdir()
+    except OSError:
+        pass
     return 1 if failed else 0
 
 
