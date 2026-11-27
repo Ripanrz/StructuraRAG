@@ -14,3 +14,16 @@ Tools_Formatting/gold_standard_summary.md
 .env
 .env.*
 !.env.example
+
+# Build and QA artifacts
+dist/
+build/
+*.chunks.jsonl
+*.manifest.json
+batch-report.jsonl
+.work/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.DS_Store
