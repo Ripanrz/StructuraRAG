@@ -6,7 +6,8 @@ This repository contains a Vercel-compatible FastAPI entrypoint. The Vercel depl
 
 - Rule-Based PDF conversion (offline from AI providers).
 - AI Lokal through an HTTPS Ollama or OpenAI-compatible endpoint reachable by the Vercel Function.
-- DOCX returned directly to the browser.
+- DOCX returned directly to the browser (default).
+- Optional RAG Bundle ZIP containing DOCX, DSL TXT, JSONL chunks, and manifest.
 - Optional HTTP Basic protection using a Vercel environment variable.
 
 The following are not yet available on the hosted Vercel path:
@@ -50,7 +51,7 @@ Recommended minimum:
 | STRUCTURARAG_VERCEL_CONVERT_TIMEOUT | 240 | Default is 240 seconds |
 | STRUCTURARAG_PAGES_PER_CALL | 1 | Default is 1 |
 
-The default Vercel function accepts small PDFs and processes them synchronously. The Function response is returned directly to the browser as DOCX; uploaded and generated documents are not persisted by this route.
+The Vercel function accepts small PDFs and processes them synchronously. The default artifact is DOCX. The UI also offers a RAG Bundle ZIP containing the DOCX, DSL TXT, chunks JSONL, and manifest. The Function returns the selected artifact directly; uploads and generated files are not persisted after the request.
 
 **Access control:** `STRUCTURARAG_ACCESS_PASSWORD` is optional. When it is set, the app enforces HTTP Basic Authentication on the page and API routes. When omitted, app-level Basic Authentication is disabled and the production URL is publicly reachable unless a separate Vercel access-control policy protects it. Anyone who can reach the endpoint may submit PDFs; avoid uploading confidential documents to an unprotected public deployment. Keep passwords in Vercel Environment Variables, never in source code.
 
@@ -70,7 +71,7 @@ The health endpoint should report:
 - providers.local.configured: false until an endpoint is configured
 - providers.cloud_oauth.available: false until the hosted OAuth use case is approved and implemented
 
-Select **Rule-Based · Offline**, upload a small text-based PDF, and download the DOCX result.
+Select **Rule-Based · Offline**, upload a small text-based PDF, and keep the default **DOCX utama** output or choose **RAG Bundle** to download the DOCX plus DSL TXT, chunks JSONL, and manifest in one ZIP.
 
 ## 4. Enable AI Lokal on Vercel
 
@@ -125,8 +126,9 @@ The current hosted route is deliberately conservative:
 
 - Default upload limit: 4 MiB, below the standard Vercel Function request-body limit.
 - Synchronous processing timeout: 240 seconds, with maxDuration configured to 300 seconds.
-- DOCX is returned directly; the hosted route does not promise persistent history.
-- Output is subject to the Vercel Function response-size limit.
+- DOCX is the default response. The user may request a RAG Bundle ZIP with DOCX, DSL TXT, JSONL chunks, and manifest.
+- The selected artifact is returned directly; generated files are not persisted after the request.
+- The 4 MiB response limit applies to DOCX and ZIP bundle alike.
 
 Vercel announced a 20 MiB request-body public beta on November 20, 2026. It requires opting in with VERCEL_SUPPORT_LARGE_REQUEST_BODY=1 and Performance (4 GB) memory. That does not remove the response-size limit, nor does it turn this synchronous route into a durable job system. I recommend keeping the 4 MiB default until the large-upload path is separately tested.
 
@@ -174,7 +176,7 @@ You can also connect the GitHub repository in Vercel for automatic preview deplo
 |---|---|---|
 | 404 or import error | Vercel root directory is wrong | Set Root Directory to repository root |
 | Missing pymupdf or docx | Root requirements.txt not used | Redeploy and inspect build logs |
-| 413 on upload | PDF exceeds request-size limit | Reduce PDF size or use a durable direct-upload/worker design |
+| 413 on upload or response | PDF or selected DOCX/RAG Bundle exceeds the 4 MiB request/response limit | Reduce PDF size, choose DOCX instead of ZIP, or use a durable direct-upload/worker design |
 | 504 on conversion | Runtime exceeds configured timeout | Use a smaller PDF or external worker |
 | AI Lokal unavailable | URL not set, not HTTPS, or unreachable | Configure a secure reachable model endpoint |
 | ChatGPT OAuth unavailable | Hosted inference entitlement not approved/implemented | Follow the Cloud OAuth approval steps above |
