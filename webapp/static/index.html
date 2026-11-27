@@ -248,9 +248,9 @@
       const form = new FormData();
       form.append('file', selectedFile);
       form.append('provider', providerSelect.value);
-      form.append('artifact', artifactSelect.value);
       try {
         if (runtimeMode === 'vercel') {
+          form.append('artifact', artifactSelect.value);
           const response = await fetch('/api/convert', { method:'POST', body:form });
           if (!response.ok) {
             const responseText = await response.text();
