@@ -64,9 +64,9 @@ The root-level `index.py`, `requirements.txt`, and `vercel.json` are configured 
 
 - `POST /api/convert` accepts a PDF and selected provider.
 - The function uses a temporary directory for each request.
-- DOCX is returned directly to the browser.
+- DOCX is the default direct response; the UI also offers a RAG Bundle ZIP with DOCX, DSL TXT, JSONL chunks, and manifest.
 - No Vercel SQLite queue or in-process background thread is used.
-- Default upload size is 4 MiB; conversion timeout is 240 seconds.
+- Default upload and response limits are 4 MiB; conversion timeout is 240 seconds.
 - The Vercel UI does not promise document history or persistent file storage.
 
 Follow the complete [Vercel deployment guide](../docs/VERCEL_DEPLOYMENT.md) for GitHub import, environment variables, password protection, AI Lokal HTTPS setup, limits, and the ChatGPT OAuth approval boundary.
