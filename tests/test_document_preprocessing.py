@@ -139,7 +139,7 @@ class DocumentPreprocessingTests(unittest.TestCase):
             "KOLOM: Number | Description\n" + rows + "\n@TABLE_END"
         )
         chunks = build_rag_chunks(dsl, "table.pdf", max_chars=350, document_id="tablehash")
-        table_chunks = [chunk for chunk in chunks if "TABLE" in chunk["metadata"]["block_types"]]
+        table_chunks = [chunk for chunk in chunks if "table" in chunk["metadata"]["block_types"]]
         self.assertGreater(len(table_chunks), 1)
         self.assertTrue(all("KOLOM: Number | Description" in chunk["content"] for chunk in table_chunks))
         self.assertTrue(all(chunk["metadata"]["table_parts"] for chunk in table_chunks))
