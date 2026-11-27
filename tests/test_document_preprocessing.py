@@ -120,9 +120,9 @@ class DocumentPreprocessingTests(unittest.TestCase):
 
     def test_rag_chunks_keep_heading_provenance_and_do_not_index_image_placeholder(self) -> None:
         dsl = (
-            "@PAGE 1\\n@h0 Document Title\\n@h1 Chapter One\\n"
-            "First paragraph.\\n@IMAGE [figure.png | page 1, y=100]\\n"
-            "Second paragraph.\\n@PAGE 2\\n@h1 Chapter Two\\nThird paragraph."
+            "@PAGE 1\n@h0 Document Title\n@h1 Chapter One\n"
+            "First paragraph.\n@IMAGE [figure.png | page 1, y=100]\n"
+            "Second paragraph.\n@PAGE 2\n@h1 Chapter Two\nThird paragraph."
         )
         chunks = build_rag_chunks(dsl, "source.pdf", max_chars=3500, document_id="a1b2c3")
         self.assertEqual(len(chunks), 2)
@@ -133,10 +133,10 @@ class DocumentPreprocessingTests(unittest.TestCase):
         self.assertEqual(chunks[1]["metadata"]["heading_path"][-1]["text"], "Chapter Two")
 
     def test_oversized_table_chunks_repeat_column_header_and_record_parts(self) -> None:
-        rows = "\\n".join(f"{number} | Entry {number} with enough description" for number in range(1, 31))
+        rows = "\n".join(f"{number} | Entry {number} with enough description" for number in range(1, 31))
         dsl = (
-            "@PAGE 1\\n@h0 Document\\n@h1 Data\\n@TABLE_START\\n"
-            "KOLOM: Number | Description\\n" + rows + "\\n@TABLE_END"
+            "@PAGE 1\n@h0 Document\n@h1 Data\n@TABLE_START\n"
+            "KOLOM: Number | Description\n" + rows + "\n@TABLE_END"
         )
         chunks = build_rag_chunks(dsl, "table.pdf", max_chars=350, document_id="tablehash")
         table_chunks = [chunk for chunk in chunks if "TABLE" in chunk["metadata"]["block_types"]]
@@ -158,8 +158,8 @@ class DocumentPreprocessingTests(unittest.TestCase):
             image.save(image_path)
             output = root / "result.docx"
             dsl = (
-                "@PAGE 1\\n@h0 Document\\n@h1 Section\\nText paragraph.\\n"
-                "@TABLE_START\\nKOLOM: A | B\\n1 | 2\\n@TABLE_END\\n"
+                "@PAGE 1\n@h0 Document\n@h1 Section\nText paragraph.\n"
+                "@TABLE_START\nKOLOM: A | B\n1 | 2\n@TABLE_END\n"
                 "@IMAGE [figure.png | page 1, y=10]"
             )
             write_docx(dsl, output, {"figure.png": image_path})
