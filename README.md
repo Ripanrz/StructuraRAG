@@ -285,6 +285,18 @@ StructuraRAG/
 └── webapp/
 ~~~
 
+## Agensi.io AI Agent Skill
+
+An installable agent skill is maintained in the agensi/ directory. Its root SKILL.md documents the PDF → DOCX workflow, RAG JSONL sidecar, installation, CLI options, verification, troubleshooting, and known limitations.
+
+Build a clean ZIP (SKILL.md is placed at the archive root):
+
+~~~bash
+python tools/build_agensi_package.py --source agensi --output dist/structurarag-pdf-to-rag-1.0.0.zip
+~~~
+
+The builder checks frontmatter, required references/scripts, likely credential patterns, per-script size, file-count/archive-size limits, safe paths, and ZIP CRC. Generated dist/ files are git-ignored. The package does not embed the full converter or third-party dependencies; agents obtain the public repository and install the CLI requirements.
+
 ## License
 
 StructuraRAG is distributed under the MIT License. See LICENSE. Third-party dependencies remain subject to their respective licenses.
