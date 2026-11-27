@@ -240,7 +240,7 @@ The Agensi skill package also includes a standard-library-only verifier for DOCX
 
 ## Web application and Vercel
 
-The FastAPI web interface accepts PDF files. The local app maintains a SQLite-backed job queue and job history. The Vercel route is stateless, synchronous, and currently returns DOCX directly; it does not persist job history or sidecars after the request ends.
+The FastAPI web interface accepts PDF files. The local app maintains a SQLite-backed job queue and job history. Completed local jobs can download both the primary DOCX and a RAG Bundle ZIP (DOCX, DSL TXT, JSONL chunks, and manifest). The Vercel route is stateless and synchronous: DOCX is the default response, with an optional RAG Bundle ZIP. It does not persist job history or generated artifacts after the request ends.
 
 Vercel defaults:
 - maximum PDF upload: 4 MiB;
