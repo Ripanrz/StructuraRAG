@@ -57,7 +57,7 @@ def collect_files(source: Path) -> list[Path]:
             continue
         if path.name == ".DS_Store" or path.name.startswith(".env"):
             continue
-        if path.suffix.lower() not in ALLOWED_SUFFIXES:
+        if path.suffix.lower() not in ALLOWED_SUFFIXES and path.name != "LICENSE":
             continue
         candidates.append(path)
     return sorted(candidates, key=lambda p: p.relative_to(source).as_posix())
