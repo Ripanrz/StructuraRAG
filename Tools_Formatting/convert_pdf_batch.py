@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import os
 import re
@@ -77,6 +78,191 @@ def repeated_margin_text(pdf: fitz.Document) -> set[str]:
     return {value for value, count in counts.items() if count >= minimum}
 
 
+
+
+def _is_page_background(rect: fitz.Rect, page_rect: fitz.Rect, threshold: float = 0.65) -> bool:
+    """Return true for image/drawing regions that cover most of a PDF page."""
+    clipped = fitz.Rect(rect) & fitz.Rect(page_rect)
+    page_area = max(1.0, page_rect.width * page_rect.height)
+    return (clipped.width * clipped.height / page_area) >= threshold
+
+
+def _is_decorative_cover_asset(rect: fitz.Rect, page_rect: fitz.Rect, page_number: int) -> bool:
+    """Filter narrow raster title strips on the cover while retaining real figures."""
+    if page_number != 1:
+        return False
+    clipped = fitz.Rect(rect) & fitz.Rect(page_rect)
+    if clipped.is_empty:
+        return False
+    width_ratio = clipped.width / max(1.0, page_rect.width)
+    height_ratio = clipped.height / max(1.0, page_rect.height)
+    aspect = clipped.width / max(1.0, clipped.height)
+    return width_ratio >= 0.32 and height_ratio <= 0.09 and aspect >= 3.5
+
+
+def _reading_order_keyed(events: list[dict[str, Any]], page_width: float) -> list[dict[str, Any]]:
+    """Order clearly separated two-column pages column-wise; otherwise use y/x."""
+    positioned = []
+    for event in events:
+        raw = event.get("_bbox")
+        if raw:
+            positioned.append((event, fitz.Rect(raw)))
+    narrow = [
+        (event, rect) for event, rect in positioned
+        if rect.width < page_width * 0.68 and event.get("kind") in {"text", "table"}
+    ]
+    centers = sorted((rect.x0 + rect.x1) / 2 for _, rect in narrow)
+    split = None
+    largest_gap = 0.0
+    for left, right in zip(centers, centers[1:]):
+        gap = right - left
+        if gap > largest_gap:
+            largest_gap, split = gap, (left + right) / 2
+    if split is not None and largest_gap >= page_width * 0.18:
+        left_items = [(event, rect) for event, rect in narrow if (rect.x0 + rect.x1) / 2 < split]
+        right_items = [(event, rect) for event, rect in narrow if (rect.x0 + rect.x1) / 2 >= split]
+        if len(left_items) >= 2 and len(right_items) >= 2:
+            left_edge = max(rect.x1 for _, rect in left_items)
+            right_edge = min(rect.x0 for _, rect in right_items)
+            if right_edge - left_edge >= page_width * 0.04:
+                full_width = [
+                    (event, rect) for event, rect in positioned
+                    if rect.width >= page_width * 0.68
+                ]
+                def column_key(item: tuple[dict[str, Any], fitz.Rect]) -> tuple[int, int, float, float]:
+                    event, rect = item
+                    region = sum(1 for _, boundary in full_width if boundary.y0 < rect.y0)
+                    column = 2 if rect.width >= page_width * 0.68 else (
+                        0 if (rect.x0 + rect.x1) / 2 < split else 1
+                    )
+                    return (region, column, rect.y0, rect.x0)
+                positioned_ids = {id(event) for event, _ in positioned}
+                ordered = [event for event, _ in sorted(positioned, key=column_key)]
+                ordered.extend(event for event in events if id(event) not in positioned_ids)
+                return ordered
+    return sorted(events, key=lambda event: (
+        event.get("y", 0.0), event.get("x", 0.0), event.get("source_order", 0)
+    ))
+
+
+def build_rag_chunks(dsl: str, source_name: str, max_chars: int = 3500) -> list[dict[str, Any]]:
+    """Create deterministic heading-aware chunks from validated DSL."""
+    if max_chars < 300:
+        raise ValueError("--chunk-max-chars harus minimal 300.")
+    document_id = hashlib.sha256(source_name.encode("utf-8")).hexdigest()[:12]
+    heading_path: dict[int, str] = {}
+    blocks: list[dict[str, Any]] = []
+    page_number = 1
+    table_lines: list[str] | None = None
+
+    for raw_line in dsl.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        page_match = re.fullmatch(r"@PAGE\s+(\d+)", line)
+        if page_match:
+            page_number = int(page_match.group(1))
+            continue
+        heading_match = re.match(r"^@h([0-5])\s+(.+)$", line)
+        if heading_match:
+            level = int(heading_match.group(1))
+            heading_path = {key: value for key, value in heading_path.items() if key < level}
+            heading_path[level] = heading_match.group(2).strip()
+            continue
+        if line == "@TABLE_START":
+            table_lines = []
+            continue
+        if line == "@TABLE_END":
+            if table_lines:
+                blocks.append({
+                    "content": "TABLE\n" + "\n".join(table_lines),
+                    "type": "table", "page": page_number,
+                    "heading_path": dict(heading_path), "image_anchor": None,
+                })
+            table_lines = None
+            continue
+        if table_lines is not None:
+            table_lines.append(line)
+            continue
+        image_match = re.match(r"^@IMAGE\s+\[([^|\]]+)(?:\|([^\]]*))?\]$", line)
+        if image_match:
+            filename = image_match.group(1).strip()
+            details = (image_match.group(2) or "").strip()
+            blocks.append({
+                "content": f"[Image anchor: {filename}]",
+                "type": "image", "page": page_number,
+                "heading_path": dict(heading_path),
+                "image_anchor": {"filename": filename, "details": details},
+            })
+            continue
+        if line.startswith("@"):
+            continue
+        blocks.append({
+            "content": line, "type": "paragraph", "page": page_number,
+            "heading_path": dict(heading_path), "image_anchor": None,
+        })
+
+    chunks: list[dict[str, Any]] = []
+    current: list[dict[str, Any]] = []
+    current_chars = 0
+    current_path: dict[int, str] | None = None
+
+    def emit() -> None:
+        nonlocal current, current_chars, current_path
+        if not current:
+            return
+        path = current_path or {}
+        headings = [{"level": level, "text": text} for level, text in sorted(path.items())]
+        heading_prefix = " > ".join(item["text"] for item in headings)
+        body = "\n".join(block["content"] for block in current if block["content"])
+        content = (heading_prefix + "\n\n" if heading_prefix else "") + body
+        pages = sorted({block["page"] for block in current})
+        images = [block["image_anchor"] for block in current if block["image_anchor"]]
+        block_types = list(dict.fromkeys(block["type"] for block in current))
+        sequence = len(chunks) + 1
+        chunks.append({
+            "chunk_id": f"{document_id}-{sequence:05d}",
+            "document_id": document_id,
+            "content": content,
+            "metadata": {
+                "source_file": source_name, "source_pages": pages,
+                "heading_path": headings, "block_types": block_types,
+                "image_anchors": images, "sequence": sequence,
+            },
+        })
+        current = []
+        current_chars = 0
+
+    for block in blocks:
+        path = block["heading_path"]
+        if current and path != current_path:
+            emit()
+        current_path = path
+        content = block["content"]
+        if len(content) > max_chars and block["type"] == "paragraph":
+            emit()
+            remaining = content
+            while len(remaining) > max_chars:
+                cut = remaining.rfind(" ", 0, max_chars + 1)
+                if cut < max_chars // 2:
+                    cut = max_chars
+                piece, remaining = remaining[:cut].strip(), remaining[cut:].strip()
+                current = [{**block, "content": piece}]
+                current_chars = len(piece)
+                emit()
+            if remaining:
+                current = [{**block, "content": remaining}]
+                current_chars = len(remaining)
+            continue
+        if current and current_chars + len(content) + 1 > max_chars:
+            emit()
+            current_path = path
+        current.append(block)
+        current_chars += len(content) + 1
+    emit()
+    return chunks
+
+
 def extract_page_events(page: fitz.Page, page_number: int, repeated: set[str], images_dir: Path,
                         use_ocr: bool = False) -> tuple[list[dict[str, Any]], dict[str, Path]]:
     events: list[dict[str, Any]] = []
@@ -87,7 +273,10 @@ def extract_page_events(page: fitz.Page, page_number: int, repeated: set[str], i
         rows = [[normalized(str(cell or "")) for cell in row] for row in table.extract()]
         rows = [row for row in rows if any(row)]
         if rows:
-            events.append({"y": float(table.bbox[1]), "x": float(table.bbox[0]), "kind": "table", "rows": rows, "source_order": idx})
+            events.append({
+                "y": float(table.bbox[1]), "x": float(table.bbox[0]), "kind": "table",
+                "rows": rows, "source_order": idx, "_bbox": tuple(table.bbox),
+            })
 
     image_index = 0
     textpage = None
@@ -108,8 +297,14 @@ def extract_page_events(page: fitz.Page, page_number: int, repeated: set[str], i
             ))
             if is_noise(text, repeated):
                 continue
-            events.append({"y": bbox.y0, "x": bbox.x0, "kind": "text", "text": text, "source_order": order})
+            events.append({
+                "y": bbox.y0, "x": bbox.x0, "kind": "text", "text": text,
+                "source_order": order, "_bbox": tuple(bbox),
+            })
         elif block.get("type") == 1 and block.get("image"):
+            image_rect = fitz.Rect(bbox)
+            if _is_page_background(image_rect, page.rect) or _is_decorative_cover_asset(image_rect, page.rect, page_number):
+                continue
             image_index += 1
             token = f"P{page_number}I{image_index}"
             ext = (block.get("ext") or "png").lower()
@@ -144,6 +339,8 @@ def extract_page_events(page: fitz.Page, page_number: int, repeated: set[str], i
                 groups.remove(extra)
     for group_index, group in enumerate(groups, 1):
         rect = group["rect"] & page.rect
+        if _is_page_background(rect, page.rect):
+            continue
         if group["count"] < 8 or rect.width < 90 or rect.height < 60:
             continue
         if rect.width * rect.height < page.rect.width * page.rect.height * .01:
@@ -166,7 +363,7 @@ def extract_page_events(page: fitz.Page, page_number: int, repeated: set[str], i
                        "filename": filename, "anchor_y": round(rect.y0, 1), "source_order": len(blocks) + group_index,
                        "_bbox": (rect.x0, rect.y0, rect.x1, rect.y1)})
 
-    events.sort(key=lambda event: (event["y"], event["x"], event["source_order"]))
+    events = _reading_order_keyed(events, page.rect.width)
     return events, image_paths
 
 
@@ -440,24 +637,78 @@ def resolve_image_tokens(text: str, events: dict[int, list[dict[str, Any]]]) -> 
 
 
 def write_docx(dsl: str, destination: Path, image_paths: dict[str, Path]) -> None:
+    """Render clean Word structure; internal DSL markers remain in the TXT sidecar."""
     document = Document()
     document.core_properties.title = destination.stem.replace("_", " ")
-    for line in dsl.splitlines():
-        paragraph = document.add_paragraph()
-        paragraph.paragraph_format.space_after = Inches(.02)
-        match = re.match(r"^@IMAGE\s+\[([^|\]]+)(?:\|[^\]]*)?\]$", line.strip())
-        if match:
-            filename = match.group(1).strip()
-            image = image_paths.get(filename)
-            if image and image.exists():
-                paragraph.add_run(line + "\n")
-                paragraph.add_run().add_picture(str(image), width=Inches(5.8))
-            else:
-                paragraph.add_run(line)
-        else:
-            paragraph.add_run(line)
-    document.save(destination)
+    document.core_properties.subject = "Structured PDF conversion by StructuraRAG"
+    lines = dsl.splitlines()
+    index = 0
+    seen_page = False
 
+    while index < len(lines):
+        line = lines[index].strip()
+        index += 1
+        if not line:
+            continue
+        page_match = re.fullmatch(r"@PAGE\s+(\d+)", line)
+        if page_match:
+            if seen_page:
+                document.add_page_break()
+            seen_page = True
+            continue
+
+        heading_match = re.match(r"^@h([0-5])\s+(.+)$", line)
+        if heading_match:
+            level = int(heading_match.group(1))
+            text = heading_match.group(2).strip()
+            style = "Title" if level == 0 else f"Heading {min(level, 5)}"
+            document.add_paragraph(text, style=style)
+            continue
+
+        if line == "@TABLE_START":
+            table_lines: list[str] = []
+            while index < len(lines) and lines[index].strip() != "@TABLE_END":
+                candidate = lines[index].strip()
+                if candidate:
+                    table_lines.append(candidate)
+                index += 1
+            if index < len(lines) and lines[index].strip() == "@TABLE_END":
+                index += 1
+            parsed_rows: list[tuple[list[str], bool]] = []
+            for row_line in table_lines:
+                is_header = row_line.upper().startswith("KOLOM:")
+                value = row_line.split(":", 1)[1].strip() if is_header else row_line
+                parsed_rows.append(([cell.strip() for cell in value.split("|")], is_header))
+            column_count = max((len(cells) for cells, _ in parsed_rows), default=0)
+            if column_count:
+                table = document.add_table(rows=0, cols=column_count)
+                table.style = "Table Grid"
+                for cells, is_header in parsed_rows:
+                    row = table.add_row()
+                    for cell_index in range(column_count):
+                        value = cells[cell_index] if cell_index < len(cells) else ""
+                        row.cells[cell_index].text = value
+                        if is_header:
+                            for run in row.cells[cell_index].paragraphs[0].runs:
+                                run.bold = True
+                document.add_paragraph()
+            continue
+
+        image_match = re.match(r"^@IMAGE\s+\[([^|\]]+)(?:\|([^\]]*))?\]$", line)
+        if image_match:
+            filename = image_match.group(1).strip()
+            image_path = image_paths.get(filename)
+            if image_path and image_path.is_file():
+                paragraph = document.add_paragraph()
+                paragraph.alignment = 1
+                paragraph.add_run().add_picture(str(image_path), width=Inches(5.8))
+            continue
+
+        if line.startswith("@"):
+            continue
+        document.add_paragraph(line)
+
+    document.save(destination)
 
 def convert_one(pdf_path: Path, output_path: Path, args: argparse.Namespace, run_dir: Path) -> dict[str, Any]:
     image_dir = run_dir / (pdf_path.stem + "_images")
@@ -527,19 +778,33 @@ def convert_one(pdf_path: Path, output_path: Path, args: argparse.Namespace, run
     write_docx(full_dsl, output_path, images)
     text_path = output_path.with_suffix(".txt")
     text_path.write_text(full_dsl, encoding="utf-8")
+    chunks = build_rag_chunks(full_dsl, pdf_path.name, max_chars=args.chunk_max_chars)
+    chunks_path = output_path.with_suffix(".chunks.jsonl")
+    with chunks_path.open("w", encoding="utf-8") as chunk_file:
+        for chunk in chunks:
+            chunk_file.write(json.dumps(chunk, ensure_ascii=False) + "\n")
     manifest_path = output_path.with_suffix(".manifest.json")
-    manifest_path.write_text(json.dumps({"source": str(pdf_path), "output": str(output_path),
-                                         "pages": len(page_events), "images": list(images),
-                                         "warnings": warnings}, ensure_ascii=False, indent=2), encoding="utf-8")
+    manifest_path.write_text(json.dumps({
+        "source": pdf_path.name, "output": output_path.name,
+        "dsl_output": text_path.name, "chunks_output": chunks_path.name,
+        "pages": len(page_events), "images": list(images), "chunk_count": len(chunks),
+        "chunk_max_chars": args.chunk_max_chars, "provider": args.provider,
+        "warnings": warnings,
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
     status = "heuristic" if args.provider == "heuristic" else ("warning" if warnings else "ok")
-    return {"source": str(pdf_path), "output": str(output_path), "pages": len(page_events),
-            "images": len(images), "warnings": warnings, "status": status}
+    return {
+        "source": pdf_path.name, "output": output_path.name, "pages": len(page_events),
+        "images": len(images), "chunks": len(chunks), "chunks_output": chunks_path.name,
+        "warnings": warnings, "status": status,
+    }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT)
+    parser.add_argument("--input", type=Path, help="Convert one PDF file.")
+    parser.add_argument("--input-dir", type=Path, help="Directory containing input PDFs (default: project pdf-e-hukum directory).")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--chunk-max-chars", type=int, default=3500, help="Maximum approximate characters per RAG chunk.")
     parser.add_argument("--provider", choices=("heuristic", "local", "openai", "codex"), default="heuristic")
     parser.add_argument("--model", default=os.getenv("OPENAI_MODEL", "gpt-4.1"), help="Responses API model or optional Codex CLI model")
     parser.add_argument("--base-url", default=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"))
@@ -553,28 +818,43 @@ def main() -> int:
     args = parser.parse_args()
     if args.pages_per_call < 1:
         parser.error("--pages-per-call must be >= 1")
+    if args.chunk_max_chars < 300:
+        parser.error("--chunk-max-chars harus minimal 300.")
+    if args.input and args.input_dir:
+        parser.error("Gunakan salah satu dari --input atau --input-dir, bukan keduanya.")
     if args.vision and args.provider != "openai":
         parser.error("--vision saat ini hanya tersedia dengan --provider openai")
     if args.provider == "local" and not os.getenv("STRUCTURARAG_LOCAL_AI_BASE_URL"):
         if os.getenv("VERCEL"):
             parser.error("Atur STRUCTURARAG_LOCAL_AI_BASE_URL ke endpoint HTTPS model lokal/self-hosted yang dapat diakses Vercel.")
 
-    if not args.input_dir.is_dir():
-        parser.error(f"Input directory not found: {args.input_dir}")
-    pdfs = sorted(p for p in args.input_dir.glob("*.pdf") if not p.name.startswith("._"))
+    if args.input:
+        if not args.input.is_file():
+            parser.error(f"Input PDF not found: {args.input}")
+        if args.input.suffix.lower() != ".pdf":
+            parser.error(f"Input must be a PDF file: {args.input}")
+        pdfs = [args.input]
+    else:
+        input_dir = args.input_dir or DEFAULT_INPUT
+        if not input_dir.is_dir():
+            parser.error(f"Input directory not found: {input_dir}")
+        pdfs = sorted(p for p in input_dir.glob("*.pdf") if not p.name.startswith("._"))
     if args.limit:
         pdfs = pdfs[:args.limit]
     if not pdfs:
-        print(f"No PDF files found in {args.input_dir}", file=sys.stderr)
+        location = args.input_dir or DEFAULT_INPUT
+        print(f"No PDF files found in {location}", file=sys.stderr)
         return 2
     args.output_dir.mkdir(parents=True, exist_ok=True)
     run_dir = args.output_dir / ".work"
     run_dir.mkdir(exist_ok=True)
     results = []
+    skipped = 0
     for index, source in enumerate(pdfs, 1):
         destination = args.output_dir / f"{source.stem}.docx"
         if destination.exists() and not args.overwrite:
             print(f"[{index}/{len(pdfs)}] SKIP (already exists): {destination.name}")
+            skipped += 1
             continue
         print(f"[{index}/{len(pdfs)}] Converting {source.name} ...", flush=True)
         try:
@@ -589,9 +869,9 @@ def main() -> int:
             print(f"    ERROR: {exc}", file=sys.stderr)
         with (args.output_dir / "batch-report.jsonl").open("a", encoding="utf-8") as report:
             report.write(json.dumps(result, ensure_ascii=False) + "\n")
-    succeeded = sum(r["status"] in {"ok", "warning"} for r in results)
+    succeeded = sum(r["status"] in {"ok", "warning", "heuristic"} for r in results)
     failed = sum(r["status"] == "error" for r in results)
-    print(f"Finished: {succeeded} converted, {failed} failed. Output: {args.output_dir}")
+    print(f"Finished: {succeeded} converted, {skipped} skipped, {failed} failed. Output: {args.output_dir}")
     return 1 if failed else 0
 
 
