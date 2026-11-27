@@ -112,6 +112,14 @@
             </select>
             <p class="mode-help" id="provider-help">Mode offline memakai aturan deterministik sebagai baseline. Cocok untuk pemrosesan awal, tetapi struktur hasil tetap perlu diperiksa.</p>
           </div>
+          <div class="mode-field hidden" id="artifact-field">
+            <label class="mode-label" for="artifact-mode">Output Vercel</label>
+            <select class="mode-select" id="artifact-mode">
+              <option value="docx">DOCX utama</option>
+              <option value="rag_bundle">RAG Bundle · DOCX + DSL + chunks JSONL + manifest</option>
+            </select>
+            <p class="mode-help">Pilih RAG Bundle untuk mengunduh seluruh artefak konversi dalam satu ZIP.</p>
+          </div>
           <label class="drop" id="drop" for="pdf-file">
             <div><div class="drop-icon">↑</div><strong>Pilih PDF atau tarik file ke sini</strong><span id="upload-limit">PDF saja · maks. 50 MB · satu dokumen per proses</span><span class="file-name" id="file-name"></span></div>
           </label>
@@ -146,6 +154,8 @@
     const input = document.querySelector('#pdf-file');
     const providerSelect = document.querySelector('#provider');
     const providerHelp = document.querySelector('#provider-help');
+    const artifactField = document.querySelector('#artifact-field');
+    const artifactSelect = document.querySelector('#artifact-mode');
     const drop = document.querySelector('#drop');
     const submit = document.querySelector('#submit');
     const nameLabel = document.querySelector('#file-name');
@@ -207,6 +217,7 @@
       row.append(left,badge); jobPanel.append(row);
       if (job.status === 'completed') {
         const link = document.createElement('a'); link.className = 'download'; link.href = `/api/jobs/${job.id}/download`; link.textContent = `Unduh ${job.output_name} ↓`; jobPanel.append(link);
+        const bundleLink = document.createElement('a'); bundleLink.className = 'download'; bundleLink.href = `/api/jobs/${job.id}/download-bundle`; bundleLink.textContent = 'Unduh RAG Bundle (ZIP) ↓'; jobPanel.append(bundleLink);
       }
       if (job.warnings?.length) {
         const list = document.createElement('ul'); list.className = 'warnings';
@@ -237,6 +248,7 @@
       const form = new FormData();
       form.append('file', selectedFile);
       form.append('provider', providerSelect.value);
+      form.append('artifact', artifactSelect.value);
       try {
         if (runtimeMode === 'vercel') {
           const response = await fetch('/api/convert', { method:'POST', body:form });
@@ -258,8 +270,9 @@
           const link = document.createElement('a');
           link.className = 'download';
           link.href = downloadUrl;
-          link.download = selectedFile.name.replace(/\.pdf$/i, '') + '.docx';
-          link.textContent = 'Unduh hasil DOCX ↓';
+          const isBundle = artifactSelect.value === 'rag_bundle';
+          link.download = selectedFile.name.replace(/\.pdf$/i, '') + (isBundle ? '.structurarag.zip' : '.docx');
+          link.textContent = isBundle ? 'Unduh RAG Bundle (ZIP) ↓' : 'Unduh hasil DOCX ↓';
           const message = document.createElement('div');
           message.className = 'message-title';
           message.textContent = 'Konversi selesai.';
@@ -299,9 +312,10 @@
         document.querySelector('#secure-note').textContent = runtimeMode === 'vercel'
           ? 'PDF diproses sementara oleh Vercel Function. File tidak disimpan sebagai riwayat di server.'
           : 'PDF dan hasil konversi disimpan di penyimpanan lokal pada mesin yang menjalankan aplikasi.';
+        artifactField.classList.toggle('hidden', runtimeMode !== 'vercel');
         document.querySelector('#format-note').textContent = runtimeMode === 'vercel'
-          ? 'DOCX dikirim langsung ke browser; DSL TXT dan riwayat job tidak disimpan.'
-          : 'DOCX, DSL TXT, dan laporan dibuat per job.';
+          ? 'DOCX sebagai default, atau ZIP berisi DOCX + DSL + RAG chunks JSONL + manifest.'
+          : 'DOCX utama, DSL TXT, RAG chunks JSONL, dan manifest tersedia dalam penyimpanan job lokal.';
         document.querySelector('#history-subtitle').textContent = runtimeMode === 'vercel'
           ? 'Stateless · tanpa riwayat'
           : 'Disimpan lokal';
