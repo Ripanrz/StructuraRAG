@@ -33,6 +33,7 @@ class AgensiPackageTests(unittest.TestCase):
                 "---\nname: sample-skill\ndescription: Convert PDFs to DOCX.\n---\n# Skill\n",
                 encoding="utf-8",
             )
+            (source / "LICENSE").write_text("MIT License\n", encoding="utf-8")
             (source / "references" / "guide.md").write_text("# Guide\n", encoding="utf-8")
             (source / "scripts" / "verify.py").write_text("print('ok')\n", encoding="utf-8")
             (source / "__pycache__" / "module.pyc").write_bytes(b"binary")
@@ -40,10 +41,11 @@ class AgensiPackageTests(unittest.TestCase):
 
             report = builder.build_archive(source, output)
             self.assertTrue(output.is_file())
-            self.assertEqual(report["file_count"], 3)
+            self.assertEqual(report["file_count"], 4)
             with zipfile.ZipFile(output) as archive:
                 names = set(archive.namelist())
                 self.assertIn("SKILL.md", names)
+                self.assertIn("LICENSE", names)
                 self.assertIn("references/guide.md", names)
                 self.assertIn("scripts/verify.py", names)
                 self.assertFalse(any("__pycache__" in name for name in names))
