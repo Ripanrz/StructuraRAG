@@ -579,7 +579,7 @@ async def convert_vercel(
         if len(output_bytes) > 4 * 1024 * 1024:
             raise HTTPException(
                 status_code=413,
-                detail="DOCX hasil melebihi batas respons Function. Gunakan PDF yang lebih kecil atau deployment dengan penyimpanan objek dan worker.",
+                detail="Artefak hasil melebihi batas respons Function 4 MiB. Pilih DOCX saja, gunakan PDF yang lebih kecil, atau gunakan deployment dengan penyimpanan objek dan worker.",
             )
 
     warnings = report.get("warnings", [])
