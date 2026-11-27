@@ -36,6 +36,8 @@ Confidence / unresolved-region detection
 
 ## The three product modes
 
+The diagram above is the target architecture, not a claim that every adapter is implemented. The current CLI accepts PDF only. It extracts page text, detected tables, raster images, and selected vector regions; the deterministic Rule-Based path reconstructs explicit hierarchy and emits DOCX, DSL TXT, a manifest, and heading-aware JSONL chunks. Embeddings and vector storage remain external.
+
 The product interface exposes three choices, but they have different runtime requirements:
 
 | Mode | Current state | Runtime contract |
@@ -60,7 +62,7 @@ Do not treat a Codex CLI token or an identity-only OAuth token as a general API 
 
 ## Deployment model
 
-The local application uses SQLite and an in-process queue for a single-user local workflow. The Vercel application uses a separate stateless conversion route: it processes one small PDF per request in a temporary directory and returns DOCX directly. This route does not promise durable job history, retries, or background processing. Large/batch workloads require private object storage, a durable queue, and an independent worker service.
+The local application uses SQLite and an in-process queue for a single-user local workflow. A completed local job can download the DOCX and a ZIP containing the DOCX, DSL TXT, JSONL chunks, and manifest. The Vercel application uses a separate stateless conversion route: it processes one small PDF per request in a temporary directory and returns DOCX by default, with an optional RAG Bundle ZIP. Vercel does not promise durable job history, retries, or background processing. Large/batch workloads require private object storage, a durable queue, and an independent worker service.
 
 ## What should be rule-based?
 
@@ -124,9 +126,9 @@ Keep raw extraction separate from normalized text and inferred labels. Never dis
 
 ## Structure-aware chunking
 
-Chunk after structural reconstruction, not at arbitrary page-call boundaries. Prefer natural units (for legal text: document → BAB → Pasal → ayat → item). Enforce a configurable token budget by splitting oversized nodes at the nearest safe child boundary. Preserve parent headings and provenance in every emitted chunk.
+The current CLI includes a deterministic heading-aware chunker after DSL reconstruction. It groups adjacent blocks by active heading path and a configurable character budget; records source filename, page provenance, heading path, block types, and image-anchor metadata; and splits oversized detected tables by complete rows while repeating the detected column header. Each chunk is emitted as one JSON object in a JSONL sidecar.
 
-Do not merge unrelated sections simply to fill a token target. Use overlap only when a boundary genuinely needs additional context, and record the overlap policy so duplicated text can be recognized downstream.
+The current chunker does not use a model tokenizer, add overlap, resolve semantic boundaries, or estimate retrieval quality. It is not yet backed by a typed Canonical Document Representation (CDR). For legal documents, prefer natural units (document → BAB → Pasal → ayat → item) and review every split against the source. Do not treat character count as a token budget.
 
 ## Quality gates
 
@@ -140,4 +142,4 @@ At minimum, evaluate:
 - Chunk boundary quality and token-budget compliance.
 - Latency, memory use, API cost, and failure rate per provider.
 
-The current repository implements a PDF-focused extraction pipeline, LLM-assisted reconstruction, a heuristic fallback, and DOCX/TXT/manifest output. The multi-format CDR and independent structure-aware chunker described here are target architecture, not claims about current capabilities.
+The current repository implements a PDF-focused extraction pipeline, conservative Rule-Based reconstruction, optional LLM-assisted reconstruction, strict AI-output validation, a native Word DOCX renderer, DSL TXT, deterministic heading-aware JSONL chunks, and a source manifest. Multi-format CDR adapters, semantic/tokenizer-aware chunking, embeddings, vector storage, and retrieval remain future work.
